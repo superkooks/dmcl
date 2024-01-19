@@ -1,6 +1,8 @@
 use core::fmt;
 use std::collections::HashMap;
 
+use crate::tac;
+
 pub struct Lexer {
     source: Vec<char>,
     index: usize, // index of that first character we have not parsed
@@ -13,18 +15,23 @@ pub struct Lexer {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     C(char), // the character itself
-    Integer(u64),
+    Integer(i64),
     Float(f64),
     Word(String),
+    Type(tac::DataType),
 
-    Assignment,
     If,
-
+    Else,
+    While,
     True,
     False,
 
     BoolOr,
     BoolAnd,
+    Eq,
+    Ne,
+    Le,
+    Ge,
 }
 
 // We need this for a to_string() method
@@ -35,13 +42,20 @@ impl fmt::Display for Token {
 }
 
 impl Lexer {
-    pub fn new(src: Vec<char>) -> Self {
+    pub fn new(mut src: Vec<char>) -> Self {
         // Reserve entries in word table
         let mut wt = HashMap::new();
         wt.insert("if".to_string(), Token::If);
+        wt.insert("else".to_string(), Token::Else);
+        wt.insert("while".to_string(), Token::While);
         wt.insert("true".to_string(), Token::True);
         wt.insert("false".to_string(), Token::False);
+        wt.insert("int".to_string(), Token::Type(tac::DataType::Integer(0)));
+        wt.insert("float".to_string(), Token::Type(tac::DataType::Float(0.0)));
+        wt.insert("bool".to_string(), Token::Type(tac::DataType::Bool(false)));
 
+        // We need an extra token on the end so the lookahead doesn't crash
+        src.push('}');
         Lexer {
             source: src,
             index: 0,
@@ -88,8 +102,34 @@ impl Lexer {
                     return Token::BoolOr;
                 }
             }
-
-            '=' => return Token::Assignment,
+            '>' => {
+                if self.test_char('=') {
+                    return Token::Ge;
+                } else {
+                    return Token::C('>');
+                }
+            }
+            '<' => {
+                if self.test_char('=') {
+                    return Token::Le;
+                } else {
+                    return Token::C('<');
+                }
+            }
+            '=' => {
+                if self.test_char('=') {
+                    return Token::Eq;
+                } else {
+                    return Token::C('=');
+                }
+            }
+            '!' => {
+                if self.test_char('=') {
+                    return Token::Ne;
+                } else {
+                    return Token::C('!');
+                }
+            }
             _ => (),
         }
 
@@ -102,7 +142,7 @@ impl Lexer {
 
             if self.peek != '.' {
                 // This is an integer literal
-                return Token::Integer(v);
+                return Token::Integer(v as i64);
             }
 
             let mut f = v as f64;

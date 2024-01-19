@@ -1,178 +1,218 @@
-use std::sync::atomic::AtomicI64;
-use std::sync::atomic::Ordering::Relaxed;
+use crate::lexer::{self, Token};
 
-use crate::{emit, lexer};
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Addr(pub usize); // Addr of variable in memory
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Label(pub usize); // A label to jump to.
+
+impl Label {
+    pub const CONTINUE: Label = Label(usize::MAX); // continue execution. used in if.
+    pub fn next(&self) -> Label {
+        return Label(self.0 + 1);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Instr {
+    AssignExpr {
+        // to = x (op) y
+        op: lexer::Token,
+        to: Addr,
+        x: Addr,
+        y: Addr, // if y = 0, then this is an unary instruction
+    },
+
+    StoreConst {
+        // Stores the constant to addr
+        c: lexer::Token,
+        addr: Addr,
+    },
+
+    IfExpr {
+        // if (test) then goto (if_true)
+        test: Addr, // must point to bool
+
+        // Special label CONTINUE indicates continuation of execution
+        if_true: Label,
+        if_false: Label,
+    },
+
+    Goto {
+        label: Label,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DataType {
-    Integer,
-    Float,
-    Bool,
-    // string
-    // composite types
+    Integer(i64),
+    Float(f64),
+    Bool(bool),
 }
 
-trait ExprAble {
-    fn gen(self: Box<Self>) -> Box<dyn ExprAble>;
-    fn reduce(self: Box<Self>) -> Box<dyn ExprAble>;
-    fn to_string(&self) -> String;
+macro_rules! get_int {
+    ($from:expr) => {
+        match $from {
+            DataType::Integer(i) => i,
+            _ => panic!("type error"),
+        }
+    };
 }
 
-pub struct Ident {
-    id: lexer::Token,
-    data_type: DataType,
+macro_rules! get_float {
+    ($from:expr) => {
+        match $from {
+            DataType::Float(f) => f,
+            _ => panic!("type error"),
+        }
+    };
 }
 
-impl ExprAble for Ident {
-    fn gen(self: Box<Self>) -> Box<dyn ExprAble> {
-        return self;
-    }
-
-    fn reduce(self: Box<Self>) -> Box<dyn ExprAble> {
-        return self;
-    }
-
-    fn to_string(&self) -> String {
-        return self.id.to_string();
-    }
+macro_rules! get_bool {
+    ($from:expr) => {
+        match $from {
+            DataType::Bool(b) => b,
+            _ => panic!("type error"),
+        }
+    };
 }
 
-pub struct Arith {
-    x: Box<dyn ExprAble>,
-    y: Box<dyn ExprAble>,
-    op: lexer::Token,
-    data_type: DataType,
+macro_rules! arith {
+    ($self:ident, $op:expr, $to:ident, $x:ident, $y:ident) => {
+        match $self.memory[$x.0] {
+            DataType::Integer(_) => {
+                $self.memory[$to.0] = DataType::Integer($op(
+                    get_int!($self.memory[$x.0]),
+                    get_int!($self.memory[$y.0]),
+                ))
+            }
+            DataType::Float(_) => {
+                $self.memory[$to.0] = DataType::Float($op(
+                    get_float!($self.memory[$x.0]),
+                    get_float!($self.memory[$y.0]),
+                ))
+            }
+            _ => panic!("cannot use arithmetic on those types"),
+        }
+    };
 }
 
-impl ExprAble for Arith {
-    fn gen(self: Box<Self>) -> Box<dyn ExprAble> {
-        return Box::new(Arith {
-            x: self.x.reduce(),
-            y: self.y.reduce(),
-            op: self.op,
-            data_type: self.data_type,
-        });
-    }
-
-    fn reduce(self: Box<Self>) -> Box<dyn ExprAble> {
-        let d = self.data_type;
-        let x = self.gen();
-        let t = Temp::new(d);
-        emit(format!("{} = {}", t.to_string(), x.to_string()).as_str());
-        return t;
-    }
-
-    fn to_string(&self) -> String {
-        return format!(
-            "{} {} {}",
-            self.x.to_string(),
-            self.op.to_string(),
-            self.y.to_string()
-        );
-    }
+macro_rules! rel {
+    ($self:ident, $op:expr, $to:ident, $x:ident, $y:ident) => {
+        match $self.memory[$x.0] {
+            DataType::Integer(_) => {
+                $self.memory[$to.0] = DataType::Bool($op(
+                    &get_int!($self.memory[$x.0]),
+                    &get_int!($self.memory[$y.0]),
+                ))
+            }
+            DataType::Float(_) => {
+                $self.memory[$to.0] = DataType::Bool($op(
+                    &get_float!($self.memory[$x.0]),
+                    &get_float!($self.memory[$y.0]),
+                ))
+            }
+            _ => panic!("cannot compare those types"),
+        }
+    };
 }
 
-pub struct Unary {
-    x: Box<dyn ExprAble>,
-    op: lexer::Token,
-    data_type: DataType,
+// A three address code program
+pub struct Prog {
+    pub memory: Vec<DataType>,
+    pub code: Vec<Instr>,
+
+    next_addr: i64, // next_addr for allocating variables
+    ip: usize,      // instruction pointer
 }
 
-impl ExprAble for Unary {
-    fn gen(self: Box<Self>) -> Box<dyn ExprAble> {
-        return Box::new(Unary {
-            x: self.x.reduce(),
-            op: self.op,
-            data_type: self.data_type,
-        });
-    }
-
-    fn reduce(self: Box<Self>) -> Box<dyn ExprAble> {
-        let d = self.data_type;
-        let x = self.gen();
-        let t = Temp::new(d);
-        emit(format!("{} = {}", t.to_string(), x.to_string()).as_str());
-        return t;
-    }
-
-    fn to_string(&self) -> String {
-        return format!("{} {}", self.op.to_string(), self.x.to_string());
-    }
-}
-
-static TEMP_COUNT: AtomicI64 = AtomicI64::new(0);
-
-pub struct Temp {
-    data_type: DataType,
-    number: i64,
-}
-
-impl Temp {
-    fn new(data_type: DataType) -> Box<Self> {
-        let t = Temp {
-            number: TEMP_COUNT.load(Relaxed),
-            data_type,
-        };
-        TEMP_COUNT.fetch_add(1, Relaxed);
-        return Box::new(t);
-    }
-}
-
-impl ExprAble for Temp {
-    fn gen(self: Box<Self>) -> Box<dyn ExprAble> {
-        return self;
-    }
-
-    fn reduce(self: Box<Self>) -> Box<dyn ExprAble> {
-        return self;
-    }
-
-    fn to_string(&self) -> String {
-        return format!("t{}", self.number);
-    }
-}
-
-pub struct Const {
-    token: lexer::Token,
-}
-
-impl Const {
-    fn jumping(self: Box<Self>, t: i64, f: i64) {
-        if self.token == lexer::Token::Word("true".to_string()) && t != 0 {
-            emit(format!("goto L{}", t).as_str());
-        } else if self.token == lexer::Token::Word("false".to_string()) && f != 0 {
-            emit(format!("goto L{}", f).as_str());
+impl Prog {
+    pub fn new() -> Prog {
+        Prog {
+            memory: Vec::new(),
+            code: Vec::new(),
+            next_addr: 0,
+            ip: 0,
         }
     }
-}
 
-impl ExprAble for Const {
-    fn gen(self: Box<Self>) -> Box<dyn ExprAble> {
-        return self;
+    pub fn allocate_var(&mut self) -> Addr {
+        // Doesn't matter what we set it to, just return the address
+        self.memory.push(DataType::Bool(false));
+        return Addr(self.memory.len() - 1);
     }
 
-    fn reduce(self: Box<Self>) -> Box<dyn ExprAble> {
-        return self;
+    pub fn add_instr(&mut self, instr: Instr) -> Label {
+        self.code.push(instr);
+        return Label(self.code.len() - 1);
     }
 
-    fn to_string(&self) -> String {
-        return self.token.to_string();
-    }
-}
-
-pub struct Or {
-    x: Box<dyn ExprAble>,
-    y: Box<dyn ExprAble>,
-}
-
-impl ExprAble for Or {
-    fn gen(self: Box<Self>) -> Box<dyn ExprAble> {}
-
-    fn reduce(self: Box<Self>) -> Box<dyn ExprAble> {
-        return self;
+    pub fn add_temp_instr(&mut self) -> Label {
+        // Add a non-executable instruction and return the address
+        self.code.push(Instr::Goto {
+            label: Label(usize::MAX),
+        });
+        return Label(self.code.len() - 1);
     }
 
-    fn to_string(&self) -> String {
-        return format!("{} {} {}", self.x.to_string(), self);
+    pub fn mod_instr(&mut self, label: Label, instr: Instr) {
+        self.code[label.0] = instr;
+    }
+
+    pub fn next_label(&self) -> Label {
+        return Label(self.code.len());
+    }
+
+    pub fn execute(&mut self) {
+        while self.ip < self.code.len() {
+            match self.code[self.ip].clone() {
+                Instr::AssignExpr { op, to, x, y } => match op {
+                    Token::C('+') => arith!(self, std::ops::Add::add, to, x, y),
+                    Token::C('-') if y.0 != 0 => arith!(self, std::ops::Sub::sub, to, x, y),
+                    Token::C('*') => arith!(self, std::ops::Mul::mul, to, x, y),
+                    Token::C('/') => arith!(self, std::ops::Div::div, to, x, y),
+
+                    Token::Eq => rel!(self, std::cmp::PartialEq::eq, to, x, y),
+                    Token::Ne => rel!(self, std::cmp::PartialEq::ne, to, x, y),
+
+                    Token::C('<') => rel!(self, std::cmp::PartialOrd::lt, to, x, y),
+                    Token::Le => rel!(self, std::cmp::PartialOrd::le, to, x, y),
+                    Token::C('>') => rel!(self, std::cmp::PartialOrd::gt, to, x, y),
+                    Token::Ge => rel!(self, std::cmp::PartialOrd::ge, to, x, y),
+
+                    Token::C('=') => self.memory[to.0] = self.memory[x.0],
+                    _ => panic!("unimplemented operator"),
+                },
+                Instr::StoreConst { c, addr } => match c {
+                    Token::Integer(i) => self.memory[addr.0] = DataType::Integer(i),
+                    Token::Float(f) => self.memory[addr.0] = DataType::Float(f),
+                    Token::True => self.memory[addr.0] = DataType::Bool(true),
+                    Token::False => self.memory[addr.0] = DataType::Bool(false),
+                    _ => panic!("invalid constant"),
+                },
+                Instr::Goto { label } => {
+                    self.ip = label.0;
+                }
+                Instr::IfExpr {
+                    test,
+                    if_true,
+                    if_false,
+                } => match self.memory[test.0] {
+                    DataType::Bool(b) => {
+                        if b {
+                            if if_true != Label::CONTINUE {
+                                self.ip = if_true.0;
+                            }
+                        } else {
+                            if if_false != Label::CONTINUE {
+                                self.ip = if_false.0;
+                            }
+                        }
+                    }
+                    _ => panic!("can only if on bool"),
+                },
+            };
+            self.ip += 1;
+        }
     }
 }
