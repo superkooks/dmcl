@@ -4,20 +4,20 @@ use crate::{
     symbols, tac,
 };
 
-pub struct Parser<'a> {
+pub struct Parser {
     lexer: Lexer,
     lookahead: Token,
 
-    top_table: symbols::Scope<'a>,
+    cur_scope: symbols::Scope,
     prog: tac::Prog,
 }
 
-impl<'a> Parser<'a> {
-    pub fn new(lexer: Lexer) -> Parser<'a> {
+impl Parser {
+    pub fn new(lexer: Lexer) -> Parser {
         let mut p = Parser {
             lexer,
             prog: tac::Prog::new(),
-            top_table: symbols::Scope::new(None),
+            cur_scope: symbols::Scope::new(None),
             lookahead: Token::C(' '),
         };
         p.next_tok();
@@ -48,8 +48,19 @@ impl<'a> Parser<'a> {
 
     fn block(&mut self) -> Box<dyn ast::Stmt> {
         self.match_tok(Token::C('{'));
+
+        // Replace the current scope with a null one, then set the current scope to a new one
+        // containing the previous.
+        let prev = std::mem::replace(&mut self.cur_scope, symbols::Scope::new(None));
+        self.cur_scope = symbols::Scope::new(Some(Box::new(prev)));
+
         self.decls();
         let s = self.stmts();
+
+        // Replace the current scope with a null one, then set the current scope to the previous one.
+        let cur = std::mem::replace(&mut self.cur_scope, symbols::Scope::new(None));
+        self.cur_scope = cur.take_prev();
+
         self.match_tok(Token::C('}'));
 
         return s;
@@ -72,7 +83,7 @@ impl<'a> Parser<'a> {
             };
 
             let ident = ast::Ident::new(self.lookahead.clone(), t, &mut self.prog);
-            self.top_table.put(self.lookahead.clone(), *ident);
+            self.cur_scope.put(self.lookahead.clone(), *ident);
 
             self.next_tok();
             self.match_tok(Token::C(';'));
@@ -129,10 +140,13 @@ impl<'a> Parser<'a> {
     fn assign(&mut self) -> Box<ast::Assign> {
         match self.lookahead {
             Token::Word(_) => (),
-            _ => panic!("syntax error: assignment must have identifier as lhs"),
+            _ => panic!(
+                "syntax error: assignment must have identifier as lhs, found {:?}",
+                self.lookahead
+            ),
         };
 
-        let id = self.top_table.get(self.lookahead.clone()).unwrap();
+        let id = self.cur_scope.get(self.lookahead.clone()).unwrap();
 
         self.next_tok();
         self.match_tok(Token::C('='));
@@ -284,7 +298,7 @@ impl<'a> Parser<'a> {
                 return x;
             }
             Token::Word(_) => {
-                let id = self.top_table.get(self.lookahead.clone()).unwrap();
+                let id = self.cur_scope.get(self.lookahead.clone()).unwrap();
                 self.next_tok();
                 return Box::new(id);
             }

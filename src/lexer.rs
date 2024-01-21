@@ -32,6 +32,8 @@ pub enum Token {
     Ne,
     Le,
     Ge,
+
+    EOF,
 }
 
 // We need this for a to_string() method
@@ -42,7 +44,7 @@ impl fmt::Display for Token {
 }
 
 impl Lexer {
-    pub fn new(mut src: Vec<char>) -> Self {
+    pub fn new(src: Vec<char>) -> Self {
         // Reserve entries in word table
         let mut wt = HashMap::new();
         wt.insert("if".to_string(), Token::If);
@@ -54,19 +56,22 @@ impl Lexer {
         wt.insert("float".to_string(), Token::Type(tac::DataType::Float(0.0)));
         wt.insert("bool".to_string(), Token::Type(tac::DataType::Bool(false)));
 
-        // We need an extra token on the end so the lookahead doesn't crash
-        src.push('}');
-        Lexer {
+        let mut l = Lexer {
             source: src,
             index: 0,
             peek: 0.into(),
             line: 0,
             word_table: wt,
-        }
+        };
+        l.read_char();
+        return l;
     }
 
     fn read_char(&mut self) {
-        self.peek = self.source[self.index];
+        self.peek = match self.source.get(self.index) {
+            Some(c) => *c,
+            None => '\x00', // indicates EOF
+        };
         self.index += 1;
     }
 
@@ -75,16 +80,17 @@ impl Lexer {
         if self.peek != test {
             return false;
         } else {
+            self.read_char();
             return true;
         }
     }
 
     pub fn scan(&mut self) -> Token {
         loop {
-            self.read_char();
             if self.peek == ' ' || self.peek == '\t' {
-                continue;
+                self.read_char();
             } else if self.peek == '\n' {
+                self.read_char();
                 self.line += 1
             } else {
                 break;
@@ -130,6 +136,9 @@ impl Lexer {
                     return Token::C('!');
                 }
             }
+            '\x00' => {
+                return Token::EOF;
+            }
             _ => (),
         }
 
@@ -149,7 +158,7 @@ impl Lexer {
             let mut d = 10.0;
             self.read_char();
             while self.peek.is_numeric() {
-                f = f + d / self.peek.to_digit(10).unwrap() as f64;
+                f = f + self.peek.to_digit(10).unwrap() as f64 / d;
                 d *= 10.0;
                 self.read_char();
             }
@@ -179,6 +188,8 @@ impl Lexer {
             }
         }
 
-        return Token::C(self.peek);
+        let t = Token::C(self.peek);
+        self.read_char();
+        return t;
     }
 }

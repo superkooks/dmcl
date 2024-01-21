@@ -122,8 +122,7 @@ pub struct Prog {
     pub memory: Vec<DataType>,
     pub code: Vec<Instr>,
 
-    next_addr: i64, // next_addr for allocating variables
-    ip: usize,      // instruction pointer
+    ip: usize, // instruction pointer
 }
 
 impl Prog {
@@ -131,7 +130,6 @@ impl Prog {
         Prog {
             memory: Vec::new(),
             code: Vec::new(),
-            next_addr: 0,
             ip: 0,
         }
     }

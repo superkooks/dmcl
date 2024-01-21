@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use crate::{ast, lexer};
 
-pub struct Scope<'a> {
-    prev: Option<&'a Scope<'a>>,
+pub struct Scope {
+    pub prev: Option<Box<Scope>>,
     sym_table: HashMap<String, ast::Ident>,
 }
 
-impl<'a> Scope<'a> {
-    pub fn new(prev: Option<&'a Scope<'a>>) -> Scope<'a> {
+impl<'a> Scope {
+    pub fn new(prev: Option<Box<Scope>>) -> Scope {
         return Scope {
             prev,
             sym_table: HashMap::new(),
@@ -32,11 +32,15 @@ impl<'a> Scope<'a> {
         match found {
             Some(_) => return found.cloned(),
             None => {
-                return match self.prev {
+                return match &self.prev {
                     Some(s) => s.get(w),
                     None => None,
                 }
             }
         }
+    }
+
+    pub fn take_prev(self) -> Scope {
+        return *self.prev.unwrap();
     }
 }
