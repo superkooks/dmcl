@@ -452,5 +452,5 @@ impl Stmt for Seq {
 pub struct NullStmt {}
 
 impl Stmt for NullStmt {
-    fn emit(self: Box<Self>, prog: &mut tac::Prog) {}
+    fn emit(self: Box<Self>, _prog: &mut tac::Prog) {}
 }
