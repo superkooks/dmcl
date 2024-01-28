@@ -268,7 +268,7 @@ impl Parser {
             Token::Integer(_) => {
                 let x = Box::new(ast::Const {
                     token: self.lookahead.clone(),
-                    data_type: tac::DataType::Integer(0),
+                    data_type: tac::DataType::Integer,
                 });
                 self.next_tok();
                 return x;
@@ -276,7 +276,7 @@ impl Parser {
             Token::Float(_) => {
                 let x = Box::new(ast::Const {
                     token: self.lookahead.clone(),
-                    data_type: tac::DataType::Float(0.0),
+                    data_type: tac::DataType::Float,
                 });
                 self.next_tok();
                 return x;
@@ -284,7 +284,7 @@ impl Parser {
             Token::True => {
                 let x = Box::new(ast::Const {
                     token: self.lookahead.clone(),
-                    data_type: tac::DataType::Bool(false),
+                    data_type: tac::DataType::Bool,
                 });
                 self.next_tok();
                 return x;
@@ -292,7 +292,7 @@ impl Parser {
             Token::False => {
                 let x = Box::new(ast::Const {
                     token: self.lookahead.clone(),
-                    data_type: tac::DataType::Bool(false),
+                    data_type: tac::DataType::Bool,
                 });
                 self.next_tok();
                 return x;

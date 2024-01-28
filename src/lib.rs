@@ -43,13 +43,13 @@ mod tests {
             tokens,
             vec![
                 Token::C('{'),
-                Token::Type(tac::DataType::Integer(0)),
+                Token::Type(tac::DataType::Integer),
                 Token::Word("p".into()),
                 Token::C(';'),
-                Token::Type(tac::DataType::Integer(0)),
+                Token::Type(tac::DataType::Integer),
                 Token::Word("q".into()),
                 Token::C(';'),
-                Token::Type(tac::DataType::Integer(0)),
+                Token::Type(tac::DataType::Integer),
                 Token::Word("t".into()),
                 Token::C(';'),
                 Token::Word("p".into()),
@@ -112,8 +112,8 @@ mod tests {
         prog.execute();
         println!("{:?}", prog.memory);
 
-        assert_eq!(prog.memory[0], tac::DataType::Integer(233));
-        assert_eq!(prog.memory[1], tac::DataType::Integer(144));
+        assert_eq!(prog.memory[0], tac::DataVal::Integer(233));
+        assert_eq!(prog.memory[1], tac::DataVal::Integer(144));
     }
 
     #[test]
@@ -146,10 +146,10 @@ mod tests {
         prog.execute();
         println!("{:?}", prog.memory);
 
-        assert_eq!(prog.memory[0], tac::DataType::Integer(5));
-        assert_eq!(prog.memory[1], tac::DataType::Integer(6));
-        assert_eq!(prog.memory[3], tac::DataType::Integer(7));
-        assert_eq!(prog.memory[4], tac::DataType::Float(6.0));
-        assert_eq!(prog.memory[2], tac::DataType::Integer(5));
+        assert_eq!(prog.memory[0], tac::DataVal::Integer(5));
+        assert_eq!(prog.memory[1], tac::DataVal::Integer(6));
+        assert_eq!(prog.memory[3], tac::DataVal::Integer(7));
+        assert_eq!(prog.memory[4], tac::DataVal::Float(6.0));
+        assert_eq!(prog.memory[2], tac::DataVal::Integer(5));
     }
 }

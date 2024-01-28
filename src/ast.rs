@@ -79,7 +79,7 @@ impl Expr for Arith {
         use lexer::Token;
         match self.op {
             Token::Eq | Token::Ne | Token::Le | Token::Ge | Token::C('>') | Token::C('<') => {
-                return DataType::Bool(false)
+                return DataType::Bool
             }
             _ => return self.in_type(),
         }
@@ -195,11 +195,11 @@ impl Expr for BoolOr {
     }
 
     fn in_type(&self) -> DataType {
-        return DataType::Bool(false);
+        return DataType::Bool;
     }
 
     fn out_type(&self) -> DataType {
-        return DataType::Bool(false);
+        return DataType::Bool;
     }
 }
 
@@ -261,11 +261,11 @@ impl Expr for BoolAnd {
     }
 
     fn in_type(&self) -> DataType {
-        return DataType::Bool(false);
+        return DataType::Bool;
     }
 
     fn out_type(&self) -> DataType {
-        return DataType::Bool(false);
+        return DataType::Bool;
     }
 }
 
@@ -315,11 +315,11 @@ impl Expr for BoolNot {
     }
 
     fn in_type(&self) -> DataType {
-        return DataType::Bool(false);
+        return DataType::Bool;
     }
 
     fn out_type(&self) -> DataType {
-        return DataType::Bool(false);
+        return DataType::Bool;
     }
 }
 
@@ -454,3 +454,8 @@ pub struct NullStmt {}
 impl Stmt for NullStmt {
     fn emit(self: Box<Self>, _prog: &mut tac::Prog) {}
 }
+
+// pub struct MultiAssign {
+//     pub call: Label,
+//     pub
+// }
