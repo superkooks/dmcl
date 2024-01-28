@@ -45,6 +45,13 @@ pub enum Instr {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DataType {
+    Integer,
+    Float,
+    Bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DataVal {
     Integer(i64),
     Float(f64),
     Bool(bool),
@@ -53,7 +60,7 @@ pub enum DataType {
 macro_rules! get_int {
     ($from:expr) => {
         match $from {
-            DataType::Integer(i) => i,
+            DataVal::Integer(i) => i,
             _ => panic!("type error"),
         }
     };
@@ -62,7 +69,7 @@ macro_rules! get_int {
 macro_rules! get_float {
     ($from:expr) => {
         match $from {
-            DataType::Float(f) => f,
+            DataVal::Float(f) => f,
             _ => panic!("type error"),
         }
     };
@@ -71,7 +78,7 @@ macro_rules! get_float {
 macro_rules! get_bool {
     ($from:expr) => {
         match $from {
-            DataType::Bool(b) => b,
+            DataVal::Bool(b) => b,
             _ => panic!("type error"),
         }
     };
@@ -80,14 +87,14 @@ macro_rules! get_bool {
 macro_rules! arith {
     ($self:ident, $op:expr, $to:ident, $x:ident, $y:ident) => {
         match $self.memory[$x.0] {
-            DataType::Integer(_) => {
-                $self.memory[$to.0] = DataType::Integer($op(
+            DataVal::Integer(_) => {
+                $self.memory[$to.0] = DataVal::Integer($op(
                     get_int!($self.memory[$x.0]),
                     get_int!($self.memory[$y.0]),
                 ))
             }
-            DataType::Float(_) => {
-                $self.memory[$to.0] = DataType::Float($op(
+            DataVal::Float(_) => {
+                $self.memory[$to.0] = DataVal::Float($op(
                     get_float!($self.memory[$x.0]),
                     get_float!($self.memory[$y.0]),
                 ))
@@ -100,14 +107,14 @@ macro_rules! arith {
 macro_rules! rel {
     ($self:ident, $op:expr, $to:ident, $x:ident, $y:ident) => {
         match $self.memory[$x.0] {
-            DataType::Integer(_) => {
-                $self.memory[$to.0] = DataType::Bool($op(
+            DataVal::Integer(_) => {
+                $self.memory[$to.0] = DataVal::Bool($op(
                     &get_int!($self.memory[$x.0]),
                     &get_int!($self.memory[$y.0]),
                 ))
             }
-            DataType::Float(_) => {
-                $self.memory[$to.0] = DataType::Bool($op(
+            DataVal::Float(_) => {
+                $self.memory[$to.0] = DataVal::Bool($op(
                     &get_float!($self.memory[$x.0]),
                     &get_float!($self.memory[$y.0]),
                 ))
@@ -119,7 +126,7 @@ macro_rules! rel {
 
 // A three address code program
 pub struct Prog {
-    pub memory: Vec<DataType>,
+    pub memory: Vec<DataVal>,
     pub code: Vec<Instr>,
 
     ip: usize, // instruction pointer
@@ -136,7 +143,7 @@ impl Prog {
 
     pub fn allocate_var(&mut self) -> Addr {
         // Doesn't matter what we set it to, just return the address
-        self.memory.push(DataType::Bool(false));
+        self.memory.push(DataVal::Bool(false));
         return Addr(self.memory.len() - 1);
     }
 
@@ -182,10 +189,10 @@ impl Prog {
                     _ => panic!("unimplemented operator"),
                 },
                 Instr::StoreConst { c, addr } => match c {
-                    Token::Integer(i) => self.memory[addr.0] = DataType::Integer(i),
-                    Token::Float(f) => self.memory[addr.0] = DataType::Float(f),
-                    Token::True => self.memory[addr.0] = DataType::Bool(true),
-                    Token::False => self.memory[addr.0] = DataType::Bool(false),
+                    Token::Integer(i) => self.memory[addr.0] = DataVal::Integer(i),
+                    Token::Float(f) => self.memory[addr.0] = DataVal::Float(f),
+                    Token::True => self.memory[addr.0] = DataVal::Bool(true),
+                    Token::False => self.memory[addr.0] = DataVal::Bool(false),
                     _ => panic!("invalid constant"),
                 },
                 Instr::Goto { label } => {
@@ -196,7 +203,7 @@ impl Prog {
                     if_true,
                     if_false,
                 } => match self.memory[test.0] {
-                    DataType::Bool(b) => {
+                    DataVal::Bool(b) => {
                         if b {
                             if if_true != Label::CONTINUE {
                                 self.ip = if_true.0;

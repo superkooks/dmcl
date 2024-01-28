@@ -52,9 +52,9 @@ impl Lexer {
         wt.insert("while".to_string(), Token::While);
         wt.insert("true".to_string(), Token::True);
         wt.insert("false".to_string(), Token::False);
-        wt.insert("int".to_string(), Token::Type(tac::DataType::Integer(0)));
-        wt.insert("float".to_string(), Token::Type(tac::DataType::Float(0.0)));
-        wt.insert("bool".to_string(), Token::Type(tac::DataType::Bool(false)));
+        wt.insert("int".to_string(), Token::Type(tac::DataType::Integer));
+        wt.insert("float".to_string(), Token::Type(tac::DataType::Float));
+        wt.insert("bool".to_string(), Token::Type(tac::DataType::Bool));
 
         let mut l = Lexer {
             source: src,
