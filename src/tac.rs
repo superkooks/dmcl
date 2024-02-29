@@ -1,4 +1,5 @@
 use crate::lexer::{self, Token};
+use crate::tac;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Addr(pub usize); // Addr of variable in memory
@@ -25,7 +26,7 @@ pub enum Instr {
 
     StoreConst {
         // Stores the constant to addr
-        c: lexer::Token,
+        v: tac::DataVal,
         addr: Addr,
     },
 
@@ -41,20 +42,39 @@ pub enum Instr {
     Goto {
         label: Label,
     },
+
+    ArrayGet {
+        index: Addr,
+        arr: Addr,
+        to: Addr,
+    },
+
+    ArraySet {
+        index: Addr,
+        arr: Addr,
+        from: Addr,
+    },
+
+    ArrayCreate {
+        arr: Addr,
+        count: Addr,
+    },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DataType {
     Integer,
     Float,
     Bool,
+    Compound(Box<DataType>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DataVal {
     Integer(i64),
     Float(f64),
     Bool(bool),
+    Compound(Vec<DataVal>),
 }
 
 macro_rules! get_int {
@@ -185,16 +205,10 @@ impl Prog {
                     Token::C('>') => rel!(self, std::cmp::PartialOrd::gt, to, x, y),
                     Token::Ge => rel!(self, std::cmp::PartialOrd::ge, to, x, y),
 
-                    Token::C('=') => self.memory[to.0] = self.memory[x.0],
+                    Token::C('=') => self.memory[to.0] = self.memory[x.0].clone(),
                     _ => panic!("unimplemented operator"),
                 },
-                Instr::StoreConst { c, addr } => match c {
-                    Token::Integer(i) => self.memory[addr.0] = DataVal::Integer(i),
-                    Token::Float(f) => self.memory[addr.0] = DataVal::Float(f),
-                    Token::True => self.memory[addr.0] = DataVal::Bool(true),
-                    Token::False => self.memory[addr.0] = DataVal::Bool(false),
-                    _ => panic!("invalid constant"),
-                },
+                Instr::StoreConst { v, addr } => self.memory[addr.0] = v,
                 Instr::Goto { label } => {
                     self.ip = label.0;
                 }
@@ -216,6 +230,35 @@ impl Prog {
                     }
                     _ => panic!("can only if on bool"),
                 },
+                Instr::ArrayGet { index, arr, to } => match self.memory[arr.0].clone() {
+                    DataVal::Compound(vals) => match self.memory[index.0].clone() {
+                        DataVal::Integer(index) => {
+                            self.memory[to.0] = vals[index as usize].clone();
+                        }
+                        _ => panic!("can only index compound types by integer"),
+                    },
+                    _ => panic!("can only index compound types"),
+                },
+                Instr::ArraySet { index, arr, from } => match self.memory[arr.0].clone() {
+                    DataVal::Compound(mut vals) => match self.memory[index.0].clone() {
+                        DataVal::Integer(index) => {
+                            vals[index as usize] = self.memory[from.0].clone();
+                            self.memory[arr.0] = DataVal::Compound(vals);
+                        }
+                        _ => panic!("can only index compound types by integer"),
+                    },
+                    _ => panic!("can only index compound types"),
+                },
+                Instr::ArrayCreate { arr, count } => {
+                    let len = get_int!(self.memory[count.0]);
+                    let mut temp = Vec::with_capacity(len as usize);
+
+                    for _ in 0..len {
+                        temp.push(DataVal::Bool(false));
+                    }
+
+                    self.memory[arr.0] = DataVal::Compound(temp);
+                }
             };
             self.ip += 1;
         }

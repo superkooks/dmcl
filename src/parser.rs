@@ -1,7 +1,8 @@
 use crate::{
     ast::{self, NullStmt},
     lexer::{Lexer, Token},
-    symbols, tac,
+    symbols,
+    tac::{self, DataType},
 };
 
 pub struct Parser {
@@ -71,7 +72,7 @@ impl Parser {
             Token::Type(_) => true,
             _ => false,
         } {
-            let t = match self.lookahead {
+            let mut t = match self.lookahead.clone() {
                 Token::Type(s) => s,
                 _ => panic!("unreachable"),
             };
@@ -79,6 +80,11 @@ impl Parser {
             self.next_tok();
             match self.lookahead {
                 Token::Word(_) => (),
+                Token::C('[') => {
+                    t = DataType::Compound(Box::new(t));
+                    self.next_tok();
+                    self.match_tok(Token::C(']'))
+                }
                 _ => panic!("syntax error: decl must have identifier"),
             };
 
@@ -137,7 +143,7 @@ impl Parser {
         }
     }
 
-    fn assign(&mut self) -> Box<ast::Assign> {
+    fn assign(&mut self) -> Box<dyn ast::Stmt> {
         match self.lookahead {
             Token::Word(_) => (),
             _ => panic!(
@@ -149,16 +155,41 @@ impl Parser {
         let id = self.cur_scope.get(self.lookahead.clone()).unwrap();
 
         self.next_tok();
-        self.match_tok(Token::C('='));
+        match self.lookahead {
+            Token::C('[') => {
+                self.next_tok();
+                let index = self.bool();
+                self.match_tok(Token::C(']'));
 
-        let stmt = Box::new(ast::Assign {
-            id,
-            expr: self.bool(),
-        });
+                self.match_tok(Token::C('='));
 
-        self.match_tok(Token::C(';'));
+                let stmt = Box::new(ast::AssignArray {
+                    id: Box::new(id),
+                    index,
+                    expr: self.bool(),
+                });
 
-        return stmt;
+                self.match_tok(Token::C(';'));
+
+                return stmt;
+            }
+            Token::C('=') => {
+                self.next_tok();
+
+                let stmt = Box::new(ast::Assign {
+                    id: Box::new(id),
+                    expr: self.bool(),
+                });
+
+                self.match_tok(Token::C(';'));
+
+                return stmt;
+            }
+            _ => panic!(
+                "syntax error, unexpected token {:?} when parsing assignment",
+                self.lookahead
+            ),
+        }
     }
 
     // This part specifies the order of operations through the heirarchy
@@ -265,34 +296,51 @@ impl Parser {
                 self.match_tok(Token::C(')'));
                 return x;
             }
-            Token::Integer(_) => {
+            Token::C('[') => {
+                // Array immediate
+                self.next_tok();
+                let mut array: Vec<Box<dyn ast::Expr>> = Vec::new();
+
+                'outer: loop {
+                    array.push(self.bool());
+
+                    match self.lookahead {
+                        Token::C(']') => {
+                            self.next_tok();
+                            break 'outer;
+                        }
+                        _ => {
+                            self.match_tok(Token::C(','));
+                        }
+                    };
+                }
+
+                return Box::new(ast::Array { values: array });
+            }
+            Token::Integer(i) => {
                 let x = Box::new(ast::Const {
-                    token: self.lookahead.clone(),
-                    data_type: tac::DataType::Integer,
+                    value: tac::DataVal::Integer(i),
                 });
                 self.next_tok();
                 return x;
             }
-            Token::Float(_) => {
+            Token::Float(f) => {
                 let x = Box::new(ast::Const {
-                    token: self.lookahead.clone(),
-                    data_type: tac::DataType::Float,
+                    value: tac::DataVal::Float(f),
                 });
                 self.next_tok();
                 return x;
             }
             Token::True => {
                 let x = Box::new(ast::Const {
-                    token: self.lookahead.clone(),
-                    data_type: tac::DataType::Bool,
+                    value: tac::DataVal::Bool(true),
                 });
                 self.next_tok();
                 return x;
             }
             Token::False => {
                 let x = Box::new(ast::Const {
-                    token: self.lookahead.clone(),
-                    data_type: tac::DataType::Bool,
+                    value: tac::DataVal::Bool(false),
                 });
                 self.next_tok();
                 return x;
@@ -300,7 +348,20 @@ impl Parser {
             Token::Word(_) => {
                 let id = self.cur_scope.get(self.lookahead.clone()).unwrap();
                 self.next_tok();
-                return Box::new(id);
+
+                if self.lookahead == Token::C('[') {
+                    self.next_tok();
+
+                    let index = self.bool();
+                    self.match_tok(Token::C(']'));
+
+                    return Box::new(ast::ArrayIndex {
+                        arr: Box::new(id),
+                        index,
+                    });
+                } else {
+                    return Box::new(id);
+                }
             }
             _ => panic!("syntax error: token {:?}", self.lookahead),
         }
