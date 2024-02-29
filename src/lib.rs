@@ -152,4 +152,31 @@ mod tests {
         assert_eq!(prog.memory[4], tac::DataVal::Float(6.0));
         assert_eq!(prog.memory[2], tac::DataVal::Integer(5));
     }
+
+    #[test]
+    fn arrays() {
+        let l = lexer::Lexer::new(
+            "
+{
+    int p;
+    int[] q;
+
+    p = 5;
+    q = [2, 2, 3, p];
+    q[0] = 1;
+    p = q[0];
+}"
+            .chars()
+            .collect(),
+        );
+
+        let mut par = parser::Parser::new(l);
+        let prog = par.program();
+        println!("{:?}", prog.code);
+
+        prog.execute();
+        println!("{:?}", prog.memory);
+
+        assert_eq!(prog.memory[0], tac::DataVal::Integer(1))
+    }
 }

@@ -1,6 +1,6 @@
 use crate::{
     lexer,
-    tac::{self, DataType},
+    tac::{self, DataType, DataVal},
 };
 
 pub trait Expr {
@@ -39,7 +39,7 @@ impl Expr for Ident {
     }
 
     fn out_type(&self) -> DataType {
-        return self.data_type;
+        return self.data_type.clone();
     }
 }
 
@@ -114,15 +114,14 @@ impl Expr for Unary {
 }
 
 pub struct Const {
-    pub token: lexer::Token,
-    pub data_type: DataType,
+    pub value: DataVal,
 }
 
 impl Expr for Const {
     fn emit(self: Box<Self>, prog: &mut tac::Prog) -> tac::Addr {
         let temp = prog.allocate_var();
         prog.add_instr(tac::Instr::StoreConst {
-            c: self.token,
+            v: self.value,
             addr: temp,
         });
         return temp;
@@ -133,7 +132,37 @@ impl Expr for Const {
     }
 
     fn out_type(&self) -> DataType {
-        return self.data_type;
+        // return self.data_type.clone();
+        panic!("ignore")
+    }
+}
+
+pub struct Array {
+    pub values: Vec<Box<dyn Expr>>,
+}
+
+impl Expr for Array {
+    fn emit(self: Box<Self>, prog: &mut tac::Prog) -> tac::Addr {
+        let len = prog.allocate_var();
+        prog.add_instr(tac::Instr::StoreConst {
+            v: DataVal::Integer(self.values.len() as i64),
+            addr: len,
+        });
+
+        let temp = prog.allocate_var();
+        prog.add_instr(tac::Instr::ArrayCreate {
+            arr: temp,
+            count: len,
+        });
+
+        return temp;
+    }
+
+    fn in_type(&self) -> DataType {
+        unimplemented!()
+    }
+    fn out_type(&self) -> DataType {
+        unimplemented!()
     }
 }
 
@@ -156,14 +185,14 @@ impl Expr for BoolOr {
         // Create true and false branches
         let output = prog.allocate_var();
         prog.add_instr(tac::Instr::StoreConst {
-            c: lexer::Token::False,
+            v: DataVal::Bool(false),
             addr: output,
         });
 
         let goto = prog.add_temp_instr();
 
         let t_branch = prog.add_instr(tac::Instr::StoreConst {
-            c: lexer::Token::True,
+            v: DataVal::Bool(true),
             addr: output,
         });
 
@@ -222,14 +251,14 @@ impl Expr for BoolAnd {
         // Create true and false branches
         let output = prog.allocate_var();
         prog.add_instr(tac::Instr::StoreConst {
-            c: lexer::Token::True,
+            v: DataVal::Bool(true),
             addr: output,
         });
 
         let goto = prog.add_temp_instr();
 
         let f_branch = prog.add_instr(tac::Instr::StoreConst {
-            c: lexer::Token::False,
+            v: DataVal::Bool(false),
             addr: output,
         });
 
@@ -284,14 +313,14 @@ impl Expr for BoolNot {
         // Create true and false branches
         let output = prog.allocate_var();
         prog.add_instr(tac::Instr::StoreConst {
-            c: lexer::Token::False,
+            v: DataVal::Bool(false),
             addr: output,
         });
 
         let goto = prog.add_temp_instr();
 
         let f_branch = prog.add_instr(tac::Instr::StoreConst {
-            c: lexer::Token::True, // false branch returns true
+            v: DataVal::Bool(true), // false branch returns true
             addr: output,
         });
 
@@ -318,6 +347,32 @@ impl Expr for BoolNot {
         return DataType::Bool;
     }
 
+    fn out_type(&self) -> DataType {
+        return DataType::Bool;
+    }
+}
+
+pub struct ArrayIndex {
+    pub arr: Box<dyn Expr>,
+    pub index: Box<dyn Expr>,
+}
+
+impl Expr for ArrayIndex {
+    fn emit(self: Box<Self>, prog: &mut tac::Prog) -> tac::Addr {
+        let out = prog.allocate_var();
+        let arr = self.arr.emit(prog);
+        let index = self.index.emit(prog);
+        prog.add_instr(tac::Instr::ArrayGet {
+            index,
+            arr,
+            to: out,
+        });
+        return out;
+    }
+
+    fn in_type(&self) -> DataType {
+        return DataType::Bool;
+    }
     fn out_type(&self) -> DataType {
         return DataType::Bool;
     }
@@ -419,7 +474,8 @@ impl Stmt for While {
 
 pub struct Assign {
     pub expr: Box<dyn Expr>,
-    pub id: Ident,
+    pub id: Box<dyn Expr>,
+    // id = expr
 }
 
 impl Stmt for Assign {
@@ -427,12 +483,41 @@ impl Stmt for Assign {
         // Resolve the expression
         let t = self.expr.emit(prog);
 
+        // Resolve the identifier
+        let id = self.id.emit(prog);
+
         // Set the id to the result of the expr
         prog.add_instr(tac::Instr::AssignExpr {
             op: lexer::Token::C('='),
-            to: self.id.addr,
+            to: id,
             x: t,
             y: tac::Addr(0),
+        });
+    }
+}
+
+pub struct AssignArray {
+    pub expr: Box<dyn Expr>,
+    pub id: Box<dyn Expr>,
+    pub index: Box<dyn Expr>,
+}
+
+impl Stmt for AssignArray {
+    fn emit(self: Box<Self>, prog: &mut tac::Prog) {
+        // Resolve the expression
+        let t = self.expr.emit(prog);
+
+        // Resolve the identifier
+        let id = self.id.emit(prog);
+
+        // Resolve the index
+        let index = self.index.emit(prog);
+
+        // Set the id to the result of the expr
+        prog.add_instr(tac::Instr::ArraySet {
+            from: t,
+            arr: id,
+            index,
         });
     }
 }
