@@ -59,6 +59,12 @@ pub enum Instr {
         arr: Addr,
         count: Addr,
     },
+    Call {
+        // Sets the return address on the call stack, then does a goto
+        label: Label,
+    },
+
+    Return {},
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -67,7 +73,17 @@ pub enum DataType {
     Float,
     Bool,
     Compound(Box<DataType>),
+    Func {
+        params: Vec<DataType>,
+        returns: Vec<DataType>,
+    },
 }
+
+// Dataval for func:
+// Func {
+//     params_mem: Vec<Addr>, // where should the params be stored when calling this function
+//     returns_mem: Vec<Addr>, // where the returned variables will be stored
+// }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataVal {
@@ -150,6 +166,7 @@ pub struct Prog {
     pub code: Vec<Instr>,
 
     ip: usize, // instruction pointer
+    call_stack: Vec<usize>,
 }
 
 impl Prog {
@@ -158,6 +175,7 @@ impl Prog {
             memory: Vec::new(),
             code: Vec::new(),
             ip: 0,
+            call_stack: Vec::new(),
         }
     }
 
@@ -208,9 +226,8 @@ impl Prog {
                     Token::C('=') => self.memory[to.0] = self.memory[x.0].clone(),
                     _ => panic!("unimplemented operator"),
                 },
-                Instr::StoreConst { v, addr } => self.memory[addr.0] = v,
-                Instr::Goto { label } => {
-                    self.ip = label.0;
+                Instr::StoreConst { v, addr } => {
+                    self.memory[addr.0] = v;
                 }
                 Instr::IfExpr {
                     test,
@@ -259,6 +276,22 @@ impl Prog {
 
                     self.memory[arr.0] = DataVal::Compound(temp);
                 }
+                Instr::Goto { label } => {
+                    self.ip = label.0;
+                }
+                Instr::Call { label } => {
+                    self.call_stack.push(self.ip + 1);
+                    self.ip = label.0;
+                }
+                Instr::Return {} => match self.call_stack.pop() {
+                    Some(label) => {
+                        self.ip = label;
+                    }
+                    None => {
+                        // Return in main function
+                        return;
+                    }
+                },
             };
             self.ip += 1;
         }

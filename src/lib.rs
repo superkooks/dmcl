@@ -154,6 +154,36 @@ mod tests {
     }
 
     #[test]
+    fn functions() {
+        let l = lexer::Lexer::new(
+            "
+{
+    func rand() () {
+        int q;
+        q = 4;
+    }
+
+    rand()
+}"
+            .chars()
+            .collect(),
+        );
+
+        let mut par = parser::Parser::new(l);
+        let prog = par.program();
+        println!("{:?}", prog.code);
+
+        prog.execute();
+        println!("{:?}", prog.memory);
+
+        assert_eq!(prog.memory[0], tac::DataVal::Integer(5));
+        assert_eq!(prog.memory[1], tac::DataVal::Integer(6));
+        assert_eq!(prog.memory[3], tac::DataVal::Integer(7));
+        assert_eq!(prog.memory[4], tac::DataVal::Float(6.0));
+        assert_eq!(prog.memory[2], tac::DataVal::Integer(5));
+    }
+
+    #[test]
     fn arrays() {
         let l = lexer::Lexer::new(
             "

@@ -1,22 +1,19 @@
 use crate::{
     lexer,
-    tac::{self, DataType, DataVal},
+    tac::{self, DataType, DataVal, Label},
 };
 
 pub trait Expr {
     // Resolve the expression, potentially adding instructions to the program,
     // returning the address where the value is stored
     fn emit(self: Box<Self>, prog: &mut tac::Prog) -> tac::Addr;
-
-    fn in_type(&self) -> DataType;
-    fn out_type(&self) -> DataType;
 }
 
 #[derive(Clone)]
 pub struct Ident {
-    name: lexer::Token,
-    addr: tac::Addr,
-    data_type: DataType,
+    pub name: lexer::Token,
+    pub addr: tac::Addr,
+    pub data_type: DataType,
 }
 
 impl Ident {
@@ -34,13 +31,13 @@ impl Expr for Ident {
         return self.addr;
     }
 
-    fn in_type(&self) -> DataType {
-        panic!("no in type for ident")
-    }
+    // fn in_type(&self) -> Vec<DataType> {
+    //     return vec![];
+    // }
 
-    fn out_type(&self) -> DataType {
-        return self.data_type.clone();
-    }
+    // fn out_type(&self) -> DataType {
+    //     return self.data_type;
+    // }
 }
 
 pub struct Arith {
@@ -65,25 +62,25 @@ impl Expr for Arith {
         return temp;
     }
 
-    fn in_type(&self) -> DataType {
-        let x = self.x.out_type();
-        let y = self.y.out_type();
-        if x == y {
-            return x;
-        } else {
-            panic!("type error: inputs to arith have different types")
-        }
-    }
+    // fn in_type(&self) -> Vec<DataType> {
+    //     let x = self.x.out_type();
+    //     let y = self.y.out_type();
+    //     if x == y {
+    //         return vec![x, y];
+    //     } else {
+    //         panic!("type error: inputs to arith have different types")
+    //     }
+    // }
 
-    fn out_type(&self) -> DataType {
-        use lexer::Token;
-        match self.op {
-            Token::Eq | Token::Ne | Token::Le | Token::Ge | Token::C('>') | Token::C('<') => {
-                return DataType::Bool
-            }
-            _ => return self.in_type(),
-        }
-    }
+    // fn out_type(&self) -> DataType {
+    //     use lexer::Token;
+    //     match self.op {
+    //         Token::Eq | Token::Ne | Token::Le | Token::Ge | Token::C('>') | Token::C('<') => {
+    //             return DataType::Bool
+    //         }
+    //         _ => return self.x.out_type(),
+    //     }
+    // }
 }
 
 pub struct Unary {
@@ -104,13 +101,13 @@ impl Expr for Unary {
         return temp;
     }
 
-    fn in_type(&self) -> DataType {
-        return self.x.out_type();
-    }
+    // fn in_type(&self) -> Vec<DataType> {
+    //     return vec![self.x.out_type()];
+    // }
 
-    fn out_type(&self) -> DataType {
-        return self.in_type();
-    }
+    // fn out_type(&self) -> DataType {
+    //     return self.in_type()[0];
+    // }
 }
 
 pub struct Const {
@@ -127,14 +124,14 @@ impl Expr for Const {
         return temp;
     }
 
-    fn in_type(&self) -> DataType {
-        panic!("no in type for ident")
-    }
+    //     fn in_type(&self) -> Vec<DataType> {
+    //         return vec![];
+    //     }
 
-    fn out_type(&self) -> DataType {
-        // return self.data_type.clone();
-        panic!("ignore")
-    }
+    // fn out_type(&self) -> DataType {
+    //     // return self.data_type.clone();
+    //     panic!("ignore")
+    // }
 }
 
 pub struct Array {
@@ -158,12 +155,12 @@ impl Expr for Array {
         return temp;
     }
 
-    fn in_type(&self) -> DataType {
-        unimplemented!()
-    }
-    fn out_type(&self) -> DataType {
-        unimplemented!()
-    }
+    // fn in_type(&self) -> DataType {
+    //     unimplemented!()
+    // }
+    // fn out_type(&self) -> DataType {
+    //     unimplemented!()
+    // }
 }
 
 pub struct BoolOr {
@@ -223,13 +220,13 @@ impl Expr for BoolOr {
         return output;
     }
 
-    fn in_type(&self) -> DataType {
-        return DataType::Bool;
-    }
+    // fn in_type(&self) -> Vec<DataType> {
+    //     return vec![DataType::Bool, DataType::Bool];
+    // }
 
-    fn out_type(&self) -> DataType {
-        return DataType::Bool;
-    }
+    // fn out_type(&self) -> DataType {
+    //     return DataType::Bool;
+    // }
 }
 
 pub struct BoolAnd {
@@ -289,13 +286,13 @@ impl Expr for BoolAnd {
         return output;
     }
 
-    fn in_type(&self) -> DataType {
-        return DataType::Bool;
-    }
+    // fn in_type(&self) -> Vec<DataType> {
+    //     return vec![DataType::Bool, DataType::Bool];
+    // }
 
-    fn out_type(&self) -> DataType {
-        return DataType::Bool;
-    }
+    // fn out_type(&self) -> DataType {
+    //     return DataType::Bool;
+    // }
 }
 
 pub struct BoolNot {
@@ -343,12 +340,106 @@ impl Expr for BoolNot {
         return output;
     }
 
-    fn in_type(&self) -> DataType {
-        return DataType::Bool;
+    // fn in_type(&self) -> DataType {
+    //     return DataType::Bool;
+    // }
+
+    // fn out_type(&self) -> DataType {
+    //     return DataType::Bool;
+    // }
+}
+
+// A func call can be used as an expression when it only returns one variable
+pub struct FuncCall {
+    pub params: Vec<Box<dyn Expr>>,
+    pub func: Box<dyn Expr>,
+}
+
+impl Expr for FuncCall {
+    fn emit(mut self: Box<Self>, prog: &mut tac::Prog) -> tac::Addr {
+        let func_addr = self.func.emit(prog);
+
+        // Get the array of where paramaters should be stored for the call
+        let params_mem = prog.allocate_var();
+        let zero = prog.allocate_var();
+        prog.add_instr(tac::Instr::StoreConst {
+            v: tac::DataVal::Integer(0),
+            addr: zero,
+        });
+        prog.add_instr(tac::Instr::ArrayGet {
+            index: zero,
+            arr: func_addr,
+            to: params_mem,
+        });
+
+        // Evaluate all of the parameters
+        for (i, p_ref) in self.params.iter_mut().enumerate() {
+            let p = std::mem::replace(
+                p_ref,
+                Box::new(Const {
+                    value: DataVal::Bool(false),
+                }),
+            );
+            let from = p.emit(prog);
+
+            // Find where the paramater should be stored
+            let param_addr = prog.allocate_var();
+            let index = prog.allocate_var();
+            prog.add_instr(tac::Instr::StoreConst {
+                v: tac::DataVal::Integer(i as i64),
+                addr: index,
+            });
+            prog.add_instr(tac::Instr::ArrayGet {
+                index: index,
+                arr: params_mem,
+                to: param_addr,
+            });
+
+            // Assign the value to the parameter
+            prog.add_instr(tac::Instr::AssignExpr {
+                op: lexer::Token::C('='),
+                to: param_addr,
+                x: from,
+                y: tac::Addr(0),
+            });
+        }
+
+        // Call the function
+        prog.add_instr(tac::Instr::Call { label });
+
+        // Return the first return
+        return returns_mem[0];
     }
 
-    fn out_type(&self) -> DataType {
-        return DataType::Bool;
+    // fn in_type(&self) -> Vec<DataType> {
+    //     // Since func call isn't an infix operator, it doesn't have an in type
+    //     return self.params.iter().map(|p| p.out_type()).collect();
+    // }
+
+    // fn out_type(&self) -> DataType {}
+}
+
+impl Stmt for FuncCall {
+    fn emit(mut self: Box<Self>, prog: &mut tac::Prog) {
+        // Evaluate all of the parameters
+        for (i, p_ref) in self.params.iter_mut().enumerate() {
+            let p = std::mem::replace(
+                p_ref,
+                Box::new(Const {
+                    value: DataVal::Bool(false),
+                }),
+            );
+            let from = p.emit(prog);
+            prog.add_instr(tac::Instr::AssignExpr {
+                op: lexer::Token::C('='),
+                to: params_mem[i],
+                x: from,
+                y: tac::Addr(0),
+            });
+        }
+
+        // Call the function
+        prog.add_instr(tac::Instr::Call { label });
     }
 }
 
@@ -370,12 +461,12 @@ impl Expr for ArrayIndex {
         return out;
     }
 
-    fn in_type(&self) -> DataType {
-        return DataType::Bool;
-    }
-    fn out_type(&self) -> DataType {
-        return DataType::Bool;
-    }
+    // fn in_type(&self) -> DataType {
+    //     return DataType::Bool;
+    // }
+    // fn out_type(&self) -> DataType {
+    //     return DataType::Bool;
+    // }
 }
 
 pub trait Stmt {
@@ -538,6 +629,47 @@ pub struct NullStmt {}
 
 impl Stmt for NullStmt {
     fn emit(self: Box<Self>, _prog: &mut tac::Prog) {}
+}
+
+pub struct FuncImpl {
+    pub name: lexer::Token,
+    pub name_addr: tac::Addr,
+    pub body: Box<dyn Stmt>,
+
+    pub params: Vec<DataType>,
+    pub returns: Vec<DataType>,
+    pub params_mem: Vec<tac::Addr>,
+    pub returns_mem: Vec<tac::Addr>,
+}
+
+impl Stmt for FuncImpl {
+    fn emit(self: Box<Self>, prog: &mut tac::Prog) {
+        // Goto after the function definition
+        let goto = prog.add_temp_instr();
+
+        // Assign this function to the variable where it is stored
+        prog.add_instr(tac::Instr::StoreConst {
+            addr: self.name_addr,
+            v: tac::DataVal::Func {
+                params: self.params,
+                returns: self.returns,
+                label: prog.next_label().next(),
+                params_mem: self.params_mem,
+                returns_mem: self.returns_mem,
+            },
+        });
+
+        // Emit the body
+        self.body.emit(prog);
+        prog.add_instr(tac::Instr::Return {});
+
+        prog.mod_instr(
+            goto,
+            tac::Instr::Goto {
+                label: prog.next_label(),
+            },
+        )
+    }
 }
 
 // pub struct MultiAssign {
