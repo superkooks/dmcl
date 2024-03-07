@@ -1,5 +1,5 @@
 use crate::{
-    ast::{self, NullStmt},
+    ast::{self, FuncImpl, Ident, NullStmt},
     lexer::{Lexer, Token},
     symbols,
     tac::{self, DataType},
@@ -138,9 +138,98 @@ impl Parser {
                     stmt: body,
                 });
             }
+            Token::Func => {
+                self.next_tok();
+
+                let name = self.lookahead.clone();
+                self.next_tok();
+
+                // Parse the function signature
+                let params: Vec<Ident> = self
+                    .decl_list()
+                    .iter()
+                    .map(|p| {
+                        let ident = ast::Ident::new(p.0.clone(), p.1.clone(), &mut self.prog);
+                        self.cur_scope.put(p.0.clone(), *ident.clone());
+                        return *ident;
+                    })
+                    .collect();
+
+                let returns: Vec<Ident> = self
+                    .decl_list()
+                    .iter()
+                    .map(|p| {
+                        let ident = ast::Ident::new(p.0.clone(), p.1.clone(), &mut self.prog);
+                        self.cur_scope.put(p.0.clone(), *ident.clone());
+                        return *ident;
+                    })
+                    .collect();
+
+                // Parse the function body
+                let body = self.block();
+
+                // Create the data type for the function
+                let params_types: Vec<DataType> =
+                    params.iter().map(|p| p.data_type.clone()).collect();
+                let returns_types: Vec<DataType> =
+                    returns.iter().map(|p| p.data_type.clone()).collect();
+
+                let name_ident = ast::Ident::new(
+                    name.clone(),
+                    DataType::Func {
+                        params: params_types.clone(),
+                        returns: returns_types.clone(),
+                    },
+                    &mut self.prog,
+                );
+
+                // Return the function
+                let params_mem = params.iter().map(|p| p.addr).collect();
+                let returns_mem = returns.iter().map(|p| p.addr).collect();
+
+                return Box::new(FuncImpl {
+                    name,
+                    name_addr: name_ident.addr,
+                    body,
+                    params: params_types,
+                    returns: returns_types,
+                    params_mem,
+                    returns_mem,
+                });
+            }
             Token::C('{') => return self.block(),
             _ => return self.assign(),
         }
+    }
+
+    fn decl_list(&mut self) -> Vec<(Token, DataType)> {
+        self.match_tok(Token::C('('));
+
+        let mut list = Vec::new();
+
+        while self.lookahead != Token::C(')') {
+            if self.lookahead == Token::C(',') {
+                self.next_tok();
+            }
+
+            let name = match self.lookahead.clone() {
+                Token::Word(w) => Token::Word(w),
+                _ => panic!("syntax error: decl must have identifier"),
+            };
+
+            self.next_tok();
+            let data_type = match self.lookahead.clone() {
+                Token::Type(s) => s,
+                _ => panic!("syntax error: decl must have a type"),
+            };
+
+            list.push((name, data_type));
+
+            self.next_tok();
+        }
+        self.next_tok();
+
+        return list;
     }
 
     fn assign(&mut self) -> Box<dyn ast::Stmt> {
@@ -155,7 +244,42 @@ impl Parser {
         let id = self.cur_scope.get(self.lookahead.clone()).unwrap();
 
         self.next_tok();
+
+        let stmt: Box<dyn ast::Stmt>;
         match self.lookahead {
+            Token::C('=') => {
+                // Assignment
+                stmt = Box::new(ast::Assign {
+                    id: Box::new(id),
+                    expr: self.bool(),
+                });
+            }
+            Token::C('(') => {
+                // Function call
+
+                // Parse function parameters
+                self.next_tok();
+                let mut params: Vec<Box<dyn ast::Expr>> = Vec::new();
+
+                'outer: loop {
+                    params.push(self.bool());
+
+                    match self.lookahead {
+                        Token::C(')') => {
+                            self.next_tok();
+                            break 'outer;
+                        }
+                        _ => {
+                            self.match_tok(Token::C(','));
+                        }
+                    };
+                }
+
+                stmt = Box::new(ast::FuncCall {
+                    func: Box::new(id),
+                    params,
+                });
+            }
             Token::C('[') => {
                 self.next_tok();
                 let index = self.bool();
@@ -173,23 +297,12 @@ impl Parser {
 
                 return stmt;
             }
-            Token::C('=') => {
-                self.next_tok();
-
-                let stmt = Box::new(ast::Assign {
-                    id: Box::new(id),
-                    expr: self.bool(),
-                });
-
-                self.match_tok(Token::C(';'));
-
-                return stmt;
-            }
-            _ => panic!(
-                "syntax error, unexpected token {:?} when parsing assignment",
-                self.lookahead
-            ),
+            _ => panic!("unknown statement"),
         }
+
+        self.match_tok(Token::C(';'));
+
+        return stmt;
     }
 
     // This part specifies the order of operations through the heirarchy
