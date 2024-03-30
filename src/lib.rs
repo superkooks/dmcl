@@ -15,13 +15,10 @@ mod tests {
         let mut l = lexer::Lexer::new(
             "
 {
-    int p;
-    int q;
-    int t;
-    p = 0;
-    q = 1;
+    p := 0;
+    q := 1;
     while p < 200 {
-        t = p + q;
+        t := p + q;
         q = p;
         p = t;
     }
@@ -43,21 +40,12 @@ mod tests {
             tokens,
             vec![
                 Token::C('{'),
-                Token::Type(tac::DataType::Integer),
                 Token::Word("p".into()),
-                Token::C(';'),
-                Token::Type(tac::DataType::Integer),
-                Token::Word("q".into()),
-                Token::C(';'),
-                Token::Type(tac::DataType::Integer),
-                Token::Word("t".into()),
-                Token::C(';'),
-                Token::Word("p".into()),
-                Token::C('='),
+                Token::DeclAssign,
                 Token::Integer(0),
                 Token::C(';'),
                 Token::Word("q".into()),
-                Token::C('='),
+                Token::DeclAssign,
                 Token::Integer(1),
                 Token::C(';'),
                 Token::While,
@@ -66,7 +54,7 @@ mod tests {
                 Token::Integer(200),
                 Token::C('{'),
                 Token::Word("t".into()),
-                Token::C('='),
+                Token::DeclAssign,
                 Token::Word("p".into()),
                 Token::C('+'),
                 Token::Word("q".into()),
@@ -90,13 +78,10 @@ mod tests {
         let l = lexer::Lexer::new(
             "
 {
-    int p;
-    int q;
-    int t;
-    p = 0;
-    q = 1;
+    p := 0;
+    q := 1;
     while p < 200 {
-        t = p + q;
+        t := p + q;
         q = p;
         p = t;
     }
@@ -110,10 +95,10 @@ mod tests {
         println!("{:?}", prog.code);
 
         prog.execute();
-        println!("{:?}", prog.memory);
+        println!("{:?}", prog.variables);
 
-        assert_eq!(prog.memory[0], tac::DataVal::Integer(233));
-        assert_eq!(prog.memory[1], tac::DataVal::Integer(144));
+        assert_eq!(prog.variables[0], tac::DataVal::Integer(233));
+        assert_eq!(prog.variables[1], tac::DataVal::Integer(144));
     }
 
     #[test]
@@ -121,19 +106,14 @@ mod tests {
         let l = lexer::Lexer::new(
             "
 {
-    int p;
-    int q;
-    int r;
-    p = 5;
-    q = 6;
+    p := 5;
+    q := 6;
     if true {
-        int p;
-        float q;
-        p = 7;
-        q = 6.0f;
+        p := 7;
+        q := 6.0f;
     }
 
-    r = p;
+    r := p;
 }"
             .chars()
             .collect(),
@@ -144,13 +124,13 @@ mod tests {
         println!("{:?}", prog.code);
 
         prog.execute();
-        println!("{:?}", prog.memory);
+        println!("{:?}", prog.variables);
 
-        assert_eq!(prog.memory[0], tac::DataVal::Integer(5));
-        assert_eq!(prog.memory[1], tac::DataVal::Integer(6));
-        assert_eq!(prog.memory[3], tac::DataVal::Integer(7));
-        assert_eq!(prog.memory[4], tac::DataVal::Float(6.0));
-        assert_eq!(prog.memory[2], tac::DataVal::Integer(5));
+        assert_eq!(prog.variables[0], tac::DataVal::Integer(5));
+        assert_eq!(prog.variables[1], tac::DataVal::Integer(6));
+        assert_eq!(prog.variables[2], tac::DataVal::Integer(7));
+        assert_eq!(prog.variables[3], tac::DataVal::Float(6.0));
+        assert_eq!(prog.variables[4], tac::DataVal::Integer(5));
     }
 
     #[test]
@@ -174,13 +154,13 @@ mod tests {
         println!("{:?}", prog.code);
 
         prog.execute();
-        println!("{:?}", prog.memory);
+        println!("{:?}", prog.variables);
 
-        assert_eq!(prog.memory[0], tac::DataVal::Integer(5));
-        assert_eq!(prog.memory[1], tac::DataVal::Integer(6));
-        assert_eq!(prog.memory[3], tac::DataVal::Integer(7));
-        assert_eq!(prog.memory[4], tac::DataVal::Float(6.0));
-        assert_eq!(prog.memory[2], tac::DataVal::Integer(5));
+        assert_eq!(prog.variables[0], tac::DataVal::Integer(5));
+        assert_eq!(prog.variables[1], tac::DataVal::Integer(6));
+        assert_eq!(prog.variables[3], tac::DataVal::Integer(7));
+        assert_eq!(prog.variables[4], tac::DataVal::Float(6.0));
+        assert_eq!(prog.variables[2], tac::DataVal::Integer(5));
     }
 
     #[test]
@@ -188,9 +168,6 @@ mod tests {
         let l = lexer::Lexer::new(
             "
 {
-    int p;
-    int[] q;
-
     p = 5;
     q = [2, 2, 3, p];
     q[0] = 1;
@@ -205,8 +182,8 @@ mod tests {
         println!("{:?}", prog.code);
 
         prog.execute();
-        println!("{:?}", prog.memory);
+        println!("{:?}", prog.variables);
 
-        assert_eq!(prog.memory[0], tac::DataVal::Integer(1))
+        assert_eq!(prog.variables[0], tac::DataVal::Integer(1))
     }
 }

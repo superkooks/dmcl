@@ -27,6 +27,7 @@ pub enum Token {
     False,
     Func,
 
+    DeclAssign,
     BoolOr,
     BoolAnd,
     Eq,
@@ -57,6 +58,7 @@ impl Lexer {
         wt.insert("float".to_string(), Token::Type(tac::DataType::Float));
         wt.insert("bool".to_string(), Token::Type(tac::DataType::Bool));
         wt.insert("func".to_string(), Token::Func);
+        wt.insert(":=".to_string(), Token::DeclAssign);
 
         let mut l = Lexer {
             source: src,
@@ -136,6 +138,13 @@ impl Lexer {
                     return Token::Ne;
                 } else {
                     return Token::C('!');
+                }
+            }
+            ':' => {
+                if self.test_char('=') {
+                    return Token::DeclAssign;
+                } else {
+                    panic!(": at invalid position")
                 }
             }
             '\x00' => {

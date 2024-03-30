@@ -1,3 +1,5 @@
+use std::iter::Map;
+
 use crate::lexer::{self, Token};
 use crate::tac;
 
@@ -16,24 +18,27 @@ impl Label {
 
 #[derive(Debug, Clone)]
 pub enum Instr {
-    AssignExpr {
-        // to = x (op) y
+    BinaryExpr {
         op: lexer::Token,
-        to: Addr,
-        x: Addr,
-        y: Addr, // if y = 0, then this is an unary instruction
     },
 
-    StoreConst {
-        // Stores the constant to addr
+    UnaryExpr {
+        op: lexer::Token,
+    },
+
+    LoadConst {
         v: tac::DataVal,
-        addr: Addr,
+    },
+
+    LoadIdent {
+        i: Addr,
+    },
+
+    StoreIdent {
+        i: Addr,
     },
 
     IfExpr {
-        // if (test) then goto (if_true)
-        test: Addr, // must point to bool
-
         // Special label CONTINUE indicates continuation of execution
         if_true: Label,
         if_false: Label,
@@ -67,23 +72,23 @@ pub enum Instr {
     Return {},
 }
 
+pub struct Struct {
+    types: Vec<DataType>,
+    names: Map<String, usize>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataType {
     Integer,
     Float,
     Bool,
-    Compound(Box<DataType>),
+    Array(Box<DataType>),
+    Struct(String), // the name of struct
     Func {
         params: Vec<DataType>,
         returns: Vec<DataType>,
     },
 }
-
-// Dataval for func:
-// Func {
-//     params_mem: Vec<Addr>, // where should the params be stored when calling this function
-//     returns_mem: Vec<Addr>, // where the returned variables will be stored
-// }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataVal {
@@ -93,77 +98,69 @@ pub enum DataVal {
     Compound(Vec<DataVal>),
 }
 
-macro_rules! get_int {
-    ($from:expr) => {
-        match $from {
+impl DataVal {
+    fn int(self) -> i64 {
+        match self {
             DataVal::Integer(i) => i,
             _ => panic!("type error"),
         }
-    };
-}
+    }
 
-macro_rules! get_float {
-    ($from:expr) => {
-        match $from {
+    fn float(self) -> f64 {
+        match self {
             DataVal::Float(f) => f,
             _ => panic!("type error"),
         }
-    };
-}
+    }
 
-macro_rules! get_bool {
-    ($from:expr) => {
-        match $from {
+    fn bool(self) -> bool {
+        match self {
             DataVal::Bool(b) => b,
             _ => panic!("type error"),
         }
-    };
+    }
 }
 
 macro_rules! arith {
-    ($self:ident, $op:expr, $to:ident, $x:ident, $y:ident) => {
-        match $self.memory[$x.0] {
-            DataVal::Integer(_) => {
-                $self.memory[$to.0] = DataVal::Integer($op(
-                    get_int!($self.memory[$x.0]),
-                    get_int!($self.memory[$y.0]),
-                ))
-            }
-            DataVal::Float(_) => {
-                $self.memory[$to.0] = DataVal::Float($op(
-                    get_float!($self.memory[$x.0]),
-                    get_float!($self.memory[$y.0]),
-                ))
-            }
+    ($self:ident, $op:expr) => {{
+        let x = $self.eval_stack.pop().unwrap();
+        let y = $self.eval_stack.pop().unwrap();
+        match x {
+            DataVal::Integer(_) => $self
+                .eval_stack
+                .push(DataVal::Integer($op(x.int(), y.int()))),
+            DataVal::Float(_) => $self
+                .eval_stack
+                .push(DataVal::Float($op(x.float(), y.float()))),
             _ => panic!("cannot use arithmetic on those types"),
         }
-    };
+    }};
 }
 
 macro_rules! rel {
-    ($self:ident, $op:expr, $to:ident, $x:ident, $y:ident) => {
-        match $self.memory[$x.0] {
-            DataVal::Integer(_) => {
-                $self.memory[$to.0] = DataVal::Bool($op(
-                    &get_int!($self.memory[$x.0]),
-                    &get_int!($self.memory[$y.0]),
-                ))
-            }
-            DataVal::Float(_) => {
-                $self.memory[$to.0] = DataVal::Bool($op(
-                    &get_float!($self.memory[$x.0]),
-                    &get_float!($self.memory[$y.0]),
-                ))
-            }
+    ($self:ident, $op:expr) => {{
+        println!("stack {:?}", $self.eval_stack);
+        let x = $self.eval_stack.pop().unwrap();
+        let y = $self.eval_stack.pop().unwrap();
+        println!("stack 2 {:?}", $self.eval_stack);
+        match x {
+            DataVal::Integer(_) => $self
+                .eval_stack
+                .push(DataVal::Bool($op(&x.int(), &y.int()))),
+            DataVal::Float(_) => $self
+                .eval_stack
+                .push(DataVal::Bool($op(&x.float(), &y.float()))),
             _ => panic!("cannot compare those types"),
         }
-    };
+    }};
 }
 
 // A three address code program
 pub struct Prog {
-    pub memory: Vec<DataVal>,
     pub code: Vec<Instr>,
+
+    pub eval_stack: Vec<DataVal>,
+    pub variables: Vec<DataVal>,
 
     ip: usize, // instruction pointer
     call_stack: Vec<usize>,
@@ -172,8 +169,9 @@ pub struct Prog {
 impl Prog {
     pub fn new() -> Prog {
         Prog {
-            memory: Vec::new(),
             code: Vec::new(),
+            eval_stack: Vec::new(),
+            variables: Vec::new(),
             ip: 0,
             call_stack: Vec::new(),
         }
@@ -181,8 +179,8 @@ impl Prog {
 
     pub fn allocate_var(&mut self) -> Addr {
         // Doesn't matter what we set it to, just return the address
-        self.memory.push(DataVal::Bool(false));
-        return Addr(self.memory.len() - 1);
+        self.variables.push(DataVal::Bool(false));
+        return Addr(self.variables.len() - 1);
     }
 
     pub fn add_instr(&mut self, instr: Instr) -> Label {
@@ -209,31 +207,40 @@ impl Prog {
     pub fn execute(&mut self) {
         while self.ip < self.code.len() {
             match self.code[self.ip].clone() {
-                Instr::AssignExpr { op, to, x, y } => match op {
-                    Token::C('+') => arith!(self, std::ops::Add::add, to, x, y),
-                    Token::C('-') if y.0 != 0 => arith!(self, std::ops::Sub::sub, to, x, y),
-                    Token::C('*') => arith!(self, std::ops::Mul::mul, to, x, y),
-                    Token::C('/') => arith!(self, std::ops::Div::div, to, x, y),
+                Instr::BinaryExpr { op } => match op {
+                    Token::C('+') => arith!(self, std::ops::Add::add),
+                    Token::C('-') => arith!(self, std::ops::Sub::sub),
+                    Token::C('*') => arith!(self, std::ops::Mul::mul),
+                    Token::C('/') => arith!(self, std::ops::Div::div),
 
-                    Token::Eq => rel!(self, std::cmp::PartialEq::eq, to, x, y),
-                    Token::Ne => rel!(self, std::cmp::PartialEq::ne, to, x, y),
+                    Token::Eq => rel!(self, std::cmp::PartialEq::eq),
+                    Token::Ne => rel!(self, std::cmp::PartialEq::ne),
 
-                    Token::C('<') => rel!(self, std::cmp::PartialOrd::lt, to, x, y),
-                    Token::Le => rel!(self, std::cmp::PartialOrd::le, to, x, y),
-                    Token::C('>') => rel!(self, std::cmp::PartialOrd::gt, to, x, y),
-                    Token::Ge => rel!(self, std::cmp::PartialOrd::ge, to, x, y),
-
-                    Token::C('=') => self.memory[to.0] = self.memory[x.0].clone(),
-                    _ => panic!("unimplemented operator"),
+                    Token::C('<') => rel!(self, std::cmp::PartialOrd::lt),
+                    Token::Le => rel!(self, std::cmp::PartialOrd::le),
+                    Token::C('>') => rel!(self, std::cmp::PartialOrd::gt),
+                    Token::Ge => rel!(self, std::cmp::PartialOrd::ge),
+                    _ => panic!("unimplemented operator for binary expression"),
                 },
-                Instr::StoreConst { v, addr } => {
-                    self.memory[addr.0] = v;
-                }
-                Instr::IfExpr {
-                    test,
-                    if_true,
-                    if_false,
-                } => match self.memory[test.0] {
+                Instr::UnaryExpr { op } => match op {
+                    Token::C('-') => {
+                        let top = self.eval_stack.pop().unwrap();
+                        match top {
+                            DataVal::Integer(_) => {
+                                self.eval_stack.push(DataVal::Integer(-top.int()));
+                            }
+                            DataVal::Float(_) => {
+                                self.eval_stack.push(DataVal::Float(-top.float()));
+                            }
+                            _ => panic!("operator unimplemented for data type"),
+                        }
+                    }
+                    _ => panic!("unimplemented operator for unary expression"),
+                },
+                Instr::LoadConst { v } => self.eval_stack.push(v),
+                Instr::LoadIdent { i } => self.eval_stack.push(self.variables[i.0].clone()),
+                Instr::StoreIdent { i } => self.variables[i.0] = self.eval_stack.pop().unwrap(),
+                Instr::IfExpr { if_true, if_false } => match self.eval_stack.pop().unwrap() {
                     DataVal::Bool(b) => {
                         if b {
                             if if_true != Label::CONTINUE {
@@ -247,41 +254,41 @@ impl Prog {
                     }
                     _ => panic!("can only if on bool"),
                 },
-                Instr::ArrayGet { index, arr, to } => match self.memory[arr.0].clone() {
-                    DataVal::Compound(vals) => match self.memory[index.0].clone() {
-                        DataVal::Integer(index) => {
-                            self.memory[to.0] = vals[index as usize].clone();
-                        }
-                        _ => panic!("can only index compound types by integer"),
-                    },
-                    _ => panic!("can only index compound types"),
-                },
-                Instr::ArraySet { index, arr, from } => match self.memory[arr.0].clone() {
-                    DataVal::Compound(mut vals) => match self.memory[index.0].clone() {
-                        DataVal::Integer(index) => {
-                            vals[index as usize] = self.memory[from.0].clone();
-                            self.memory[arr.0] = DataVal::Compound(vals);
-                        }
-                        _ => panic!("can only index compound types by integer"),
-                    },
-                    _ => panic!("can only index compound types"),
-                },
-                Instr::ArrayCreate { arr, count } => {
-                    let len = get_int!(self.memory[count.0]);
-                    let mut temp = Vec::with_capacity(len as usize);
+                // Instr::ArrayGet { index, arr, to } => match self.memory[arr.0].clone() {
+                //     DataVal::Compound(vals) => match self.memory[index.0].clone() {
+                //         DataVal::Integer(index) => {
+                //             self.memory[to.0] = vals[index as usize].clone();
+                //         }
+                //         _ => panic!("can only index compound types by integer"),
+                //     },
+                //     _ => panic!("can only index compound types"),
+                // },
+                // Instr::ArraySet { index, arr, from } => match self.memory[arr.0].clone() {
+                //     DataVal::Compound(mut vals) => match self.memory[index.0].clone() {
+                //         DataVal::Integer(index) => {
+                //             vals[index as usize] = self.memory[from.0].clone();
+                //             self.memory[arr.0] = DataVal::Compound(vals);
+                //         }
+                //         _ => panic!("can only index compound types by integer"),
+                //     },
+                //     _ => panic!("can only index compound types"),
+                // },
+                // Instr::ArrayCreate { arr, count } => {
+                //     let len = get_int!(self.memory[count.0]);
+                //     let mut temp = Vec::with_capacity(len as usize);
 
-                    for _ in 0..len {
-                        temp.push(DataVal::Bool(false));
-                    }
+                //     for _ in 0..len {
+                //         temp.push(DataVal::Bool(false));
+                //     }
 
-                    self.memory[arr.0] = DataVal::Compound(temp);
-                }
+                //     self.memory[arr.0] = DataVal::Compound(temp);
+                // }
                 Instr::Goto { label } => {
-                    self.ip = label.0;
+                    self.ip = label.0 - 1;
                 }
                 Instr::Call { label } => {
                     self.call_stack.push(self.ip + 1);
-                    self.ip = label.0;
+                    self.ip = label.0 - 1;
                 }
                 Instr::Return {} => match self.call_stack.pop() {
                     Some(label) => {
@@ -292,6 +299,7 @@ impl Prog {
                         return;
                     }
                 },
+                _ => unimplemented!("TODO"),
             };
             self.ip += 1;
         }
