@@ -1,4 +1,4 @@
-use std::iter::Map;
+use std::collections::HashMap;
 
 use enum_as_inner::EnumAsInner;
 
@@ -18,9 +18,10 @@ impl Label {
     }
 }
 
+#[derive(Clone)]
 pub struct Struct {
-    types: Vec<DataType>,
-    names: Map<String, usize>,
+    pub types: Vec<DataType>,
+    pub names: HashMap<String, usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, EnumAsInner)]
@@ -75,9 +76,9 @@ pub enum Instr {
 
     Discard, // discrads an element from the eval_stack
 
-    ArrayGet,
-    ArraySet,
-    ArrayCreate,
+    CompoundGet,
+    CompoundSet,
+    CompoundCreate,
 
     Goto {
         label: Label, // so far no need for a dynamic goto
@@ -128,6 +129,7 @@ pub struct Prog {
 
     pub eval_stack: Vec<DataVal>,
     pub variables: Vec<DataVal>,
+    pub user_structs: HashMap<String, Struct>,
 
     ip: usize, // instruction pointer
     call_stack: Vec<usize>,
@@ -141,6 +143,7 @@ impl Prog {
             variables: Vec::new(),
             ip: 0,
             call_stack: Vec::new(),
+            user_structs: HashMap::new(),
         }
     }
 
@@ -221,13 +224,13 @@ impl Prog {
                     }
                     _ => panic!("can only if on bool"),
                 },
-                Instr::ArrayGet => {
+                Instr::CompoundGet => {
                     let index = self.eval_stack.pop().unwrap().into_integer().unwrap();
                     let arr = self.eval_stack.pop().unwrap().into_compound().unwrap();
                     let val = arr[index as usize].clone();
                     self.eval_stack.push(val);
                 }
-                Instr::ArraySet => {
+                Instr::CompoundSet => {
                     let val = self.eval_stack.pop().unwrap();
                     let index = self.eval_stack.pop().unwrap().into_integer().unwrap();
                     let mut arr = self.eval_stack.pop().unwrap().into_compound().unwrap();
@@ -235,7 +238,7 @@ impl Prog {
                     arr[index as usize] = val;
                     self.eval_stack.push(DataVal::Compound(arr));
                 }
-                Instr::ArrayCreate => {
+                Instr::CompoundCreate => {
                     let len = self.eval_stack.pop().unwrap().into_integer().unwrap();
                     let arr = vec![DataVal::Bool(false); len as usize];
                     self.eval_stack.push(DataVal::Compound(arr));

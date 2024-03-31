@@ -3,15 +3,15 @@ use crate::{
     tac::{self, DataType, DataVal},
 };
 
-pub mod array;
+pub mod compound;
 pub mod func;
 
 pub trait Expr {
     // Resolve the expression, potentially adding instructions to the program,
     // returning the address where the value is stored
     fn emit(self: Box<Self>, prog: &mut tac::Prog);
-    fn in_type(&self) -> Vec<DataType>;
-    fn out_type(&self) -> DataType;
+    fn in_type(&self, prog: &tac::Prog) -> Vec<DataType>;
+    fn out_type(&self, prog: &tac::Prog) -> DataType;
 }
 
 #[derive(Clone)]
@@ -26,11 +26,11 @@ impl Expr for Ident {
         prog.add_instr(tac::Instr::LoadIdent { i: self.addr });
     }
 
-    fn in_type(&self) -> Vec<DataType> {
+    fn in_type(&self, _prog: &tac::Prog) -> Vec<DataType> {
         return vec![];
     }
 
-    fn out_type(&self) -> DataType {
+    fn out_type(&self, _prog: &tac::Prog) -> DataType {
         return self.data_type.clone();
     }
 }
@@ -50,9 +50,9 @@ impl Expr for Arith {
         prog.add_instr(tac::Instr::BinaryExpr { op: self.op });
     }
 
-    fn in_type(&self) -> Vec<DataType> {
-        let x = self.x.out_type();
-        let y = self.y.out_type();
+    fn in_type(&self, prog: &tac::Prog) -> Vec<DataType> {
+        let x = self.x.out_type(prog);
+        let y = self.y.out_type(prog);
         if x == y {
             return vec![x, y];
         } else {
@@ -60,13 +60,13 @@ impl Expr for Arith {
         }
     }
 
-    fn out_type(&self) -> DataType {
+    fn out_type(&self, prog: &tac::Prog) -> DataType {
         use lexer::Token;
         match self.op {
             Token::Eq | Token::Ne | Token::Le | Token::Ge | Token::C('>') | Token::C('<') => {
                 return DataType::Bool
             }
-            _ => return self.x.out_type(),
+            _ => return self.x.out_type(prog),
         }
     }
 }
@@ -82,12 +82,12 @@ impl Expr for Unary {
         prog.add_instr(tac::Instr::UnaryExpr { op: self.op });
     }
 
-    fn in_type(&self) -> Vec<DataType> {
-        return vec![self.x.out_type()];
+    fn in_type(&self, prog: &tac::Prog) -> Vec<DataType> {
+        return vec![self.x.out_type(prog)];
     }
 
-    fn out_type(&self) -> DataType {
-        return self.x.out_type();
+    fn out_type(&self, prog: &tac::Prog) -> DataType {
+        return self.x.out_type(prog);
     }
 }
 
@@ -101,11 +101,11 @@ impl Expr for Const {
         prog.add_instr(tac::Instr::LoadConst { v: self.value });
     }
 
-    fn in_type(&self) -> Vec<DataType> {
+    fn in_type(&self, _prog: &tac::Prog) -> Vec<DataType> {
         return vec![];
     }
 
-    fn out_type(&self) -> DataType {
+    fn out_type(&self, _prog: &tac::Prog) -> DataType {
         return self.data_type.clone();
     }
 }
@@ -160,11 +160,11 @@ impl Expr for BoolOr {
         );
     }
 
-    fn in_type(&self) -> Vec<DataType> {
+    fn in_type(&self, _prog: &tac::Prog) -> Vec<DataType> {
         return vec![DataType::Bool, DataType::Bool];
     }
 
-    fn out_type(&self) -> DataType {
+    fn out_type(&self, _prog: &tac::Prog) -> DataType {
         return DataType::Bool;
     }
 }
@@ -219,11 +219,11 @@ impl Expr for BoolAnd {
         );
     }
 
-    fn in_type(&self) -> Vec<DataType> {
+    fn in_type(&self, _prog: &tac::Prog) -> Vec<DataType> {
         return vec![DataType::Bool, DataType::Bool];
     }
 
-    fn out_type(&self) -> DataType {
+    fn out_type(&self, _prog: &tac::Prog) -> DataType {
         return DataType::Bool;
     }
 }
@@ -267,11 +267,11 @@ impl Expr for BoolNot {
         );
     }
 
-    fn in_type(&self) -> Vec<DataType> {
+    fn in_type(&self, _prog: &tac::Prog) -> Vec<DataType> {
         return vec![DataType::Bool];
     }
 
-    fn out_type(&self) -> DataType {
+    fn out_type(&self, _prog: &tac::Prog) -> DataType {
         return DataType::Bool;
     }
 }
@@ -288,7 +288,7 @@ pub struct If {
 impl Stmt for If {
     fn emit(self: Box<Self>, prog: &mut tac::Prog) {
         // Resolve the expr
-        let b = self.expr.emit(prog);
+        self.expr.emit(prog);
         let if1 = prog.add_temp_instr();
 
         // Execute the statement if true
@@ -314,7 +314,7 @@ pub struct IfElse {
 impl Stmt for IfElse {
     fn emit(self: Box<Self>, prog: &mut tac::Prog) {
         // Resolve the expr
-        let cond = self.expr.emit(prog);
+        self.expr.emit(prog);
         let if1 = prog.add_temp_instr();
 
         // Execute the statement if true
@@ -375,7 +375,7 @@ pub struct Assign {
 impl Stmt for Assign {
     fn emit(self: Box<Self>, prog: &mut tac::Prog) {
         // Resolve the expression
-        let t = self.expr.emit(prog);
+        self.expr.emit(prog);
 
         // Set the id to the result of the expr
         prog.add_instr(tac::Instr::StoreIdent { i: self.id.addr });

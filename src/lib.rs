@@ -183,4 +183,36 @@ mod tests {
 
         assert_eq!(prog.variables[0], tac::DataVal::Integer(1))
     }
+
+    #[test]
+    fn structs() {
+        let l = lexer::Lexer::new(
+            "
+{
+    struct Test {
+        n1: int,
+        n2: float
+    }
+
+    p := Test{
+        n1: 5,
+        n2: 6.0f
+    };
+    q := p.n1;
+    r := p.n2;
+}"
+            .chars()
+            .collect(),
+        );
+
+        let mut par = parser::Parser::new(l);
+        let prog = par.program();
+        println!("{:?}", prog.code);
+
+        prog.execute();
+        println!("{:?}", prog.variables);
+
+        assert_eq!(prog.variables[1], tac::DataVal::Integer(5));
+        assert_eq!(prog.variables[2], tac::DataVal::Float(6.));
+    }
 }

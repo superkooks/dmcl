@@ -1,6 +1,4 @@
-use crate::{
-    ast::Const, ast::Expr, ast::Ident, ast::Stmt, lexer, tac, tac::DataType, tac::DataVal,
-};
+use crate::{ast::Const, ast::Expr, ast::Ident, ast::Stmt, tac, tac::DataType, tac::DataVal};
 
 // A func call can be used as an expression when it only returns one variable
 pub struct FuncCall {
@@ -29,12 +27,12 @@ impl Expr for FuncCall {
         prog.add_instr(tac::Instr::Call);
     }
 
-    fn in_type(&self) -> Vec<DataType> {
-        return self.func.out_type().into_function().unwrap().0;
+    fn in_type(&self, prog: &tac::Prog) -> Vec<DataType> {
+        return self.func.out_type(prog).into_function().unwrap().0;
     }
 
-    fn out_type(&self) -> DataType {
-        let returns = self.func.out_type().into_function().unwrap().1;
+    fn out_type(&self, prog: &tac::Prog) -> DataType {
+        let returns = self.func.out_type(prog).into_function().unwrap().1;
         if returns.len() == 1 {
             return returns[0].clone();
         } else {
@@ -57,7 +55,7 @@ impl Stmt for FuncCall {
                 }),
             );
 
-            let from = p.emit(prog);
+            p.emit(prog);
         }
 
         // Call the function

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{ast, lexer, tac};
+use crate::{ast, lexer};
 
 pub struct Scope {
     pub prev: Option<Box<Scope>>,
