@@ -22,35 +22,6 @@ impl<'a> Scope {
         };
     }
 
-    // Find the ident in this scope, or assign a new identifier
-    // pub fn assign(
-    //     &mut self,
-    //     w: lexer::Token,
-    //     d: tac::DataType,
-    //     prog: &mut tac::Prog,
-    // ) -> ast::Ident {
-    //     let s = match w.clone() {
-    //         lexer::Token::Word(s) => s,
-    //         _ => panic!("cannot get non-word from symbol table: {:?}", w),
-    //     };
-    //     let found = self.sym_table.get(&s);
-
-    //     match found {
-    //         Some(_) => found.cloned().unwrap(),
-    //         None => {
-    //             let a = prog.allocate_var();
-    //             let i = ast::Ident {
-    //                 data_type: d,
-    //                 name: w,
-    //                 addr: a,
-    //             };
-    //             self.sym_table.insert(s, i.clone());
-    //             return i;
-    //         }
-    //     }
-    // }
-
-    // Find the ident by searching expanding scopes
     pub fn get(&self, w: lexer::Token) -> Option<ast::Ident> {
         let s = match w.clone() {
             lexer::Token::Word(s) => s,

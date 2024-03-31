@@ -1,5 +1,7 @@
 use std::iter::Map;
 
+use enum_as_inner::EnumAsInner;
+
 use crate::lexer::{self, Token};
 use crate::tac;
 
@@ -48,28 +50,16 @@ pub enum Instr {
         label: Label,
     },
 
-    ArrayGet {
-        index: Addr,
-        arr: Addr,
-        to: Addr,
-    },
+    ArrayGet,
+    ArraySet,
+    ArrayCreate,
 
-    ArraySet {
-        index: Addr,
-        arr: Addr,
-        from: Addr,
-    },
-
-    ArrayCreate {
-        arr: Addr,
-        count: Addr,
-    },
     Call {
         // Sets the return address on the call stack, then does a goto
         label: Label,
     },
 
-    Return {},
+    Return,
 }
 
 pub struct Struct {
@@ -77,7 +67,7 @@ pub struct Struct {
     names: Map<String, usize>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, EnumAsInner)]
 pub enum DataType {
     Integer,
     Float,
@@ -90,7 +80,7 @@ pub enum DataType {
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, EnumAsInner)]
 pub enum DataVal {
     Integer(i64),
     Float(f64),
@@ -98,40 +88,19 @@ pub enum DataVal {
     Compound(Vec<DataVal>),
 }
 
-impl DataVal {
-    fn int(self) -> i64 {
-        match self {
-            DataVal::Integer(i) => i,
-            _ => panic!("type error"),
-        }
-    }
-
-    fn float(self) -> f64 {
-        match self {
-            DataVal::Float(f) => f,
-            _ => panic!("type error"),
-        }
-    }
-
-    fn bool(self) -> bool {
-        match self {
-            DataVal::Bool(b) => b,
-            _ => panic!("type error"),
-        }
-    }
-}
-
 macro_rules! arith {
     ($self:ident, $op:expr) => {{
         let x = $self.eval_stack.pop().unwrap();
         let y = $self.eval_stack.pop().unwrap();
         match x {
-            DataVal::Integer(_) => $self
-                .eval_stack
-                .push(DataVal::Integer($op(x.int(), y.int()))),
-            DataVal::Float(_) => $self
-                .eval_stack
-                .push(DataVal::Float($op(x.float(), y.float()))),
+            DataVal::Integer(_) => $self.eval_stack.push(DataVal::Integer($op(
+                x.into_integer().unwrap(),
+                y.into_integer().unwrap(),
+            ))),
+            DataVal::Float(_) => $self.eval_stack.push(DataVal::Float($op(
+                x.into_float().unwrap(),
+                y.into_float().unwrap(),
+            ))),
             _ => panic!("cannot use arithmetic on those types"),
         }
     }};
@@ -144,12 +113,14 @@ macro_rules! rel {
         let y = $self.eval_stack.pop().unwrap();
         println!("stack 2 {:?}", $self.eval_stack);
         match x {
-            DataVal::Integer(_) => $self
-                .eval_stack
-                .push(DataVal::Bool($op(&x.int(), &y.int()))),
-            DataVal::Float(_) => $self
-                .eval_stack
-                .push(DataVal::Bool($op(&x.float(), &y.float()))),
+            DataVal::Integer(_) => $self.eval_stack.push(DataVal::Bool($op(
+                &x.into_integer().unwrap(),
+                &y.into_integer().unwrap(),
+            ))),
+            DataVal::Float(_) => $self.eval_stack.push(DataVal::Bool($op(
+                &x.into_float().unwrap(),
+                &y.into_float().unwrap(),
+            ))),
             _ => panic!("cannot compare those types"),
         }
     }};
@@ -226,11 +197,11 @@ impl Prog {
                     Token::C('-') => {
                         let top = self.eval_stack.pop().unwrap();
                         match top {
-                            DataVal::Integer(_) => {
-                                self.eval_stack.push(DataVal::Integer(-top.int()));
+                            DataVal::Integer(i) => {
+                                self.eval_stack.push(DataVal::Integer(-i));
                             }
-                            DataVal::Float(_) => {
-                                self.eval_stack.push(DataVal::Float(-top.float()));
+                            DataVal::Float(f) => {
+                                self.eval_stack.push(DataVal::Float(-f));
                             }
                             _ => panic!("operator unimplemented for data type"),
                         }
@@ -254,35 +225,25 @@ impl Prog {
                     }
                     _ => panic!("can only if on bool"),
                 },
-                // Instr::ArrayGet { index, arr, to } => match self.memory[arr.0].clone() {
-                //     DataVal::Compound(vals) => match self.memory[index.0].clone() {
-                //         DataVal::Integer(index) => {
-                //             self.memory[to.0] = vals[index as usize].clone();
-                //         }
-                //         _ => panic!("can only index compound types by integer"),
-                //     },
-                //     _ => panic!("can only index compound types"),
-                // },
-                // Instr::ArraySet { index, arr, from } => match self.memory[arr.0].clone() {
-                //     DataVal::Compound(mut vals) => match self.memory[index.0].clone() {
-                //         DataVal::Integer(index) => {
-                //             vals[index as usize] = self.memory[from.0].clone();
-                //             self.memory[arr.0] = DataVal::Compound(vals);
-                //         }
-                //         _ => panic!("can only index compound types by integer"),
-                //     },
-                //     _ => panic!("can only index compound types"),
-                // },
-                // Instr::ArrayCreate { arr, count } => {
-                //     let len = get_int!(self.memory[count.0]);
-                //     let mut temp = Vec::with_capacity(len as usize);
+                Instr::ArrayGet => {
+                    let index = self.eval_stack.pop().unwrap().into_integer().unwrap();
+                    let arr = self.eval_stack.pop().unwrap().into_compound().unwrap();
+                    let val = arr[index as usize].clone();
+                    self.eval_stack.push(val);
+                }
+                Instr::ArraySet => {
+                    let val = self.eval_stack.pop().unwrap();
+                    let index = self.eval_stack.pop().unwrap().into_integer().unwrap();
+                    let mut arr = self.eval_stack.pop().unwrap().into_compound().unwrap();
 
-                //     for _ in 0..len {
-                //         temp.push(DataVal::Bool(false));
-                //     }
-
-                //     self.memory[arr.0] = DataVal::Compound(temp);
-                // }
+                    arr[index as usize] = val;
+                    self.eval_stack.push(DataVal::Compound(arr));
+                }
+                Instr::ArrayCreate => {
+                    let len = self.eval_stack.pop().unwrap().into_integer().unwrap();
+                    let arr = vec![DataVal::Bool(false); len as usize];
+                    self.eval_stack.push(DataVal::Compound(arr));
+                }
                 Instr::Goto { label } => {
                     self.ip = label.0 - 1;
                 }
