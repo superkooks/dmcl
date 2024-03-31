@@ -75,7 +75,7 @@ pub struct Unary {
 
 impl Expr for Unary {
     fn emit(self: Box<Self>, prog: &mut tac::Prog) {
-        let x_res = self.x.emit(prog);
+        self.x.emit(prog);
         prog.add_instr(tac::Instr::UnaryExpr { op: self.op });
     }
 
@@ -107,35 +107,48 @@ impl Expr for Const {
     }
 }
 
-// pub struct Array {
-//     pub values: Vec<Box<dyn Expr>>,
-// }
+pub struct ArrayLiteral {
+    pub values: Vec<Box<dyn Expr>>,
+}
 
-// impl Expr for Array {
-//     fn emit(self: Box<Self>, prog: &mut tac::Prog) {
-//         let len = prog.allocate_var();
-//         prog.add_instr(tac::Instr::LoadConst {
-//             v: DataVal::Integer(self.values.len() as i64),
-//             addr: len,
-//         });
+impl Expr for ArrayLiteral {
+    fn emit(mut self: Box<Self>, prog: &mut tac::Prog) {
+        // Create the array
+        prog.add_instr(tac::Instr::LoadConst {
+            v: DataVal::Integer(self.values.len() as i64),
+        });
+        prog.add_instr(tac::Instr::ArrayCreate);
 
-//         let temp = prog.allocate_var();
-//         prog.add_instr(tac::Instr::ArrayCreate {
-//             arr: temp,
-//             count: len,
-//         });
+        // For each value in the array, evaluate it, and set it in the array
+        for idx in 0..self.values.len() {
+            // In order to emit it, we need to own the value, which means
+            // we need to replace the value in the array with somthing
+            let v = std::mem::replace(
+                &mut self.values[idx],
+                Box::new(Const {
+                    value: DataVal::Bool(false),
+                    data_type: DataType::Bool,
+                }),
+            );
 
-//         return temp;
-//     }
+            prog.add_instr(tac::Instr::LoadConst {
+                v: DataVal::Integer(idx as i64),
+            });
 
-//     fn in_type(&self) -> Vec<DataType> {
-//         return vec![self.values[0].out_type(); self.values.len()];
-//     }
+            v.emit(prog);
 
-//     fn out_type(&self) -> DataType {
-//         return DataType::Array(Box::new(self.values[0].out_type()));
-//     }
-// }
+            prog.add_instr(tac::Instr::ArraySet);
+        }
+    }
+
+    fn in_type(&self) -> Vec<DataType> {
+        return vec![self.values[0].out_type(); self.values.len()];
+    }
+
+    fn out_type(&self) -> DataType {
+        return DataType::Array(Box::new(self.values[0].out_type()));
+    }
+}
 
 pub struct BoolOr {
     pub x: Box<dyn Expr>,
@@ -144,12 +157,12 @@ pub struct BoolOr {
 
 impl Expr for BoolOr {
     fn emit(self: Box<Self>, prog: &mut tac::Prog) {
-        let x_res = self.x.emit(prog);
+        self.x.emit(prog);
 
         // Lazy evaluate the second operand
         let if1 = prog.add_temp_instr();
 
-        let y_res = self.y.emit(prog);
+        self.y.emit(prog);
 
         let if2 = prog.add_temp_instr();
 
@@ -203,12 +216,12 @@ pub struct BoolAnd {
 
 impl Expr for BoolAnd {
     fn emit(self: Box<Self>, prog: &mut tac::Prog) {
-        let x_res = self.x.emit(prog);
+        self.x.emit(prog);
 
         // Lazy evaluate the second operand
         let if1 = prog.add_temp_instr();
 
-        let y_res = self.y.emit(prog);
+        self.y.emit(prog);
 
         let if2 = prog.add_temp_instr();
 
@@ -262,7 +275,7 @@ pub struct BoolNot {
 impl Expr for BoolNot {
     // Implement not using jumps instead of a dedicated op in AssignExpr, i guess...
     fn emit(self: Box<Self>, prog: &mut tac::Prog) {
-        let x_res = self.x.emit(prog);
+        self.x.emit(prog);
 
         // Lazy evaluate the second operand
         let if1 = prog.add_temp_instr();
@@ -396,31 +409,26 @@ impl Expr for BoolNot {
 //     // }
 // }
 
-// pub struct ArrayIndex {
-//     pub arr: Box<dyn Expr>,
-//     pub index: Box<dyn Expr>,
-// }
+pub struct ArrayIndex {
+    pub arr: Box<dyn Expr>,
+    pub index: Box<dyn Expr>,
+}
 
-// impl Expr for ArrayIndex {
-//     fn emit(self: Box<Self>, prog: &mut tac::Prog) -> tac::Addr {
-//         let out = prog.allocate_var();
-//         let arr = self.arr.emit(prog);
-//         let index = self.index.emit(prog);
-//         prog.add_instr(tac::Instr::ArrayGet {
-//             index,
-//             arr,
-//             to: out,
-//         });
-//         return out;
-//     }
+impl Expr for ArrayIndex {
+    fn emit(self: Box<Self>, prog: &mut tac::Prog) {
+        self.arr.emit(prog);
+        self.index.emit(prog);
+        prog.add_instr(tac::Instr::ArrayGet);
+    }
 
-//     // fn in_type(&self) -> DataType {
-//     //     return DataType::Bool;
-//     // }
-//     // fn out_type(&self) -> DataType {
-//     //     return DataType::Bool;
-//     // }
-// }
+    fn in_type(&self) -> Vec<DataType> {
+        return vec![self.arr.out_type(), DataType::Integer];
+    }
+
+    fn out_type(&self) -> DataType {
+        return *self.arr.out_type().into_array().unwrap();
+    }
+}
 
 pub trait Stmt {
     fn emit(self: Box<Self>, prog: &mut tac::Prog);
@@ -528,31 +536,30 @@ impl Stmt for Assign {
     }
 }
 
-// pub struct AssignArray {
-//     pub expr: Box<dyn Expr>,
-//     pub id: Box<dyn Expr>,
-//     pub index: Box<dyn Expr>,
-// }
+pub struct AssignArray {
+    pub expr: Box<dyn Expr>,
+    pub id: Ident,
+    pub index: Box<dyn Expr>,
+}
 
-// impl Stmt for AssignArray {
-//     fn emit(self: Box<Self>, prog: &mut tac::Prog) {
-//         // Resolve the expression
-//         let t = self.expr.emit(prog);
+impl Stmt for AssignArray {
+    fn emit(self: Box<Self>, prog: &mut tac::Prog) {
+        // Load the array
+        prog.add_instr(tac::Instr::LoadIdent { i: self.id.addr });
 
-//         // Resolve the identifier
-//         let id = self.id.emit(prog);
+        // Resolve the index
+        self.index.emit(prog);
 
-//         // Resolve the index
-//         let index = self.index.emit(prog);
+        // Resolve the expression
+        self.expr.emit(prog);
 
-//         // Set the id to the result of the expr
-//         prog.add_instr(tac::Instr::ArraySet {
-//             from: t,
-//             arr: id,
-//             index,
-//         });
-//     }
-// }
+        // Set the value in the array
+        prog.add_instr(tac::Instr::ArraySet);
+
+        // Set the id to the array
+        prog.add_instr(tac::Instr::StoreIdent { i: self.id.addr });
+    }
+}
 
 pub struct Seq {
     pub stmt1: Box<dyn Stmt>,

@@ -168,8 +168,8 @@ mod tests {
         let l = lexer::Lexer::new(
             "
 {
-    p = 5;
-    q = [2, 2, 3, p];
+    p := 5;
+    q := [2, 2, 3, p];
     q[0] = 1;
     p = q[0];
 }"

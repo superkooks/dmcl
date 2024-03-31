@@ -273,22 +273,26 @@ impl Parser {
                 unimplemented!()
             }
             Token::C('[') => {
-                // self.next_tok();
-                // let index = self.bool();
-                // self.match_tok(Token::C(']'));
+                self.next_tok();
+                let index = self.bool();
+                self.match_tok(Token::C(']'));
 
-                // self.match_tok(Token::C('='));
+                self.match_tok(Token::C('='));
 
-                // let stmt = Box::new(ast::AssignArray {
-                //     id: Box::new(id),
-                //     index,
-                //     expr: self.bool(),
-                // });
+                let id = self
+                    .cur_scope
+                    .get(id_tok.clone())
+                    .expect(&format!("unknown identifier: {}", id_tok));
 
-                // self.match_tok(Token::C(';'));
+                let stmt = Box::new(ast::AssignArray {
+                    id: id,
+                    index,
+                    expr: self.bool(),
+                });
 
-                // return stmt;
-                unimplemented!()
+                self.match_tok(Token::C(';'));
+
+                return stmt;
             }
             _ => panic!("unknown statement"),
         }
@@ -403,26 +407,25 @@ impl Parser {
                 return x;
             }
             Token::C('[') => {
-                // Array immediate
-                // self.next_tok();
-                // let mut array: Vec<Box<dyn ast::Expr>> = Vec::new();
+                // Array literal
+                self.next_tok();
+                let mut array: Vec<Box<dyn ast::Expr>> = Vec::new();
 
-                // 'outer: loop {
-                //     array.push(self.bool());
+                'outer: loop {
+                    array.push(self.bool());
 
-                //     match self.lookahead {
-                //         Token::C(']') => {
-                //             self.next_tok();
-                //             break 'outer;
-                //         }
-                //         _ => {
-                //             self.match_tok(Token::C(','));
-                //         }
-                //     };
-                // }
+                    match self.lookahead {
+                        Token::C(']') => {
+                            self.next_tok();
+                            break 'outer;
+                        }
+                        _ => {
+                            self.match_tok(Token::C(','));
+                        }
+                    };
+                }
 
-                // return Box::new(ast::Array { values: array });
-                panic!("oof");
+                return Box::new(ast::ArrayLiteral { values: array });
             }
             Token::Integer(i) => {
                 let x = Box::new(ast::Const {
@@ -461,16 +464,15 @@ impl Parser {
                 self.next_tok();
 
                 if self.lookahead == Token::C('[') {
-                    // self.next_tok();
+                    self.next_tok();
 
-                    // let index = self.bool();
-                    // self.match_tok(Token::C(']'));
+                    let index = self.bool();
+                    self.match_tok(Token::C(']'));
 
-                    // return Box::new(ast::ArrayIndex {
-                    //     arr: Box::new(id),
-                    //     index,
-                    // });
-                    panic!("oof");
+                    return Box::new(ast::ArrayIndex {
+                        arr: Box::new(id),
+                        index,
+                    });
                 } else {
                     return Box::new(id);
                 }
