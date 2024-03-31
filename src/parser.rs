@@ -284,7 +284,7 @@ impl Parser {
                     .get(id_tok.clone())
                     .expect(&format!("unknown identifier: {}", id_tok));
 
-                let stmt = Box::new(ast::AssignArray {
+                let stmt = Box::new(ast::array::AssignArray {
                     id: id,
                     index,
                     expr: self.bool(),
@@ -425,7 +425,7 @@ impl Parser {
                     };
                 }
 
-                return Box::new(ast::ArrayLiteral { values: array });
+                return Box::new(ast::array::ArrayLiteral { values: array });
             }
             Token::Integer(i) => {
                 let x = Box::new(ast::Const {
@@ -469,7 +469,7 @@ impl Parser {
                     let index = self.bool();
                     self.match_tok(Token::C(']'));
 
-                    return Box::new(ast::ArrayIndex {
+                    return Box::new(ast::array::ArrayIndex {
                         arr: Box::new(id),
                         index,
                     });
