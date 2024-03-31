@@ -1,6 +1,8 @@
 use core::fmt;
 use std::collections::HashMap;
 
+use enum_as_inner::EnumAsInner;
+
 use crate::tac;
 
 pub struct Lexer {
@@ -12,7 +14,7 @@ pub struct Lexer {
     word_table: HashMap<String, Token>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, EnumAsInner)]
 pub enum Token {
     C(char), // the character itself
     Integer(i64),
@@ -27,6 +29,7 @@ pub enum Token {
     False,
     Func,
     Return,
+    Struct,
 
     DeclAssign,
     BoolOr,
@@ -60,6 +63,7 @@ impl Lexer {
         wt.insert("bool".to_string(), Token::Type(tac::DataType::Bool));
         wt.insert("func".to_string(), Token::Func);
         wt.insert("return".to_string(), Token::Return);
+        wt.insert("struct".to_string(), Token::Struct);
 
         let mut l = Lexer {
             source: src,
@@ -145,7 +149,7 @@ impl Lexer {
                 if self.test_char('=') {
                     return Token::DeclAssign;
                 } else {
-                    panic!(": at invalid position")
+                    return Token::C(':');
                 }
             }
             '\x00' => {

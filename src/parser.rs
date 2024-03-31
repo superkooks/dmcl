@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     ast::{self, NullStmt},
     lexer::{Lexer, Token},
@@ -121,8 +123,9 @@ impl Parser {
                 ))));
 
                 // Parse the function signature
+                self.match_tok(Token::C('('));
                 let params: Vec<ast::Ident> = self
-                    .decl_list()
+                    .decl_list(Token::C(')'))
                     .iter()
                     .map(|p| {
                         let ident = ast::Ident {
@@ -134,6 +137,7 @@ impl Parser {
                         return ident;
                     })
                     .collect();
+                self.match_tok(Token::C(')'));
 
                 let returns = self.type_list();
 
@@ -179,6 +183,28 @@ impl Parser {
 
                 return Box::new(ast::func::Return { values });
             }
+            Token::Struct => {
+                self.next_tok();
+                let name = self.lookahead.clone();
+                self.next_tok();
+
+                self.match_tok(Token::C('{'));
+                let fields = self.decl_list(Token::C('}'));
+                self.match_tok(Token::C('}'));
+
+                let mut types = vec![];
+                let mut names = HashMap::new();
+                for (idx, field) in fields.iter().enumerate() {
+                    types.push(field.1.clone());
+                    names.insert(field.0.clone().into_word().unwrap(), idx);
+                }
+
+                self.prog
+                    .user_structs
+                    .insert(name.into_word().unwrap(), tac::Struct { types, names });
+
+                return Box::new(ast::NullStmt {});
+            }
             Token::C('{') => return self.block(),
             _ => return self.assign(),
         }
@@ -199,12 +225,11 @@ impl Parser {
         return list;
     }
 
-    fn decl_list(&mut self) -> Vec<(Token, DataType)> {
-        self.match_tok(Token::C('('));
-
+    // Caller is responsible for the start and end token ()/[]
+    fn decl_list(&mut self, end_tok: Token) -> Vec<(Token, DataType)> {
         let mut list = Vec::new();
 
-        while self.lookahead != Token::C(')') {
+        while self.lookahead != end_tok {
             if self.lookahead == Token::C(',') {
                 self.next_tok();
             }
@@ -214,6 +239,7 @@ impl Parser {
                 _ => panic!("syntax error: decl must have identifier"),
             };
             self.next_tok();
+            self.match_tok(Token::C(':'));
 
             let data_type = match self.lookahead.clone() {
                 Token::Type(s) => s,
@@ -223,7 +249,6 @@ impl Parser {
 
             list.push((name, data_type));
         }
-        self.next_tok();
 
         return list;
     }
@@ -274,7 +299,7 @@ impl Parser {
                 let id = ast::Ident {
                     addr: self.prog.allocate_var(),
                     name: id_tok.clone(),
-                    data_type: expr.out_type(),
+                    data_type: expr.out_type(&self.prog),
                 };
 
                 self.cur_scope.put(id_tok, id.clone());
@@ -323,7 +348,7 @@ impl Parser {
                     .get(id_tok.clone())
                     .expect(&format!("unknown identifier: {}", id_tok));
 
-                let stmt = Box::new(ast::array::AssignArray {
+                let stmt = Box::new(ast::compound::AssignArray {
                     id: id,
                     index,
                     expr: self.bool(),
@@ -433,7 +458,19 @@ impl Parser {
             self.next_tok();
             return Box::new(ast::BoolNot { x: self.unary() });
         } else {
-            return self.factor();
+            return self.field();
+        }
+    }
+
+    fn field(&mut self) -> Box<dyn ast::Expr> {
+        let x = self.factor();
+        if self.lookahead == Token::C('.') {
+            self.next_tok();
+            let field = self.lookahead.clone().into_word().unwrap();
+            self.next_tok();
+            return Box::new(ast::compound::StructAccess { expr: x, field });
+        } else {
+            return x;
         }
     }
 
@@ -451,7 +488,7 @@ impl Parser {
                 let array: Vec<Box<dyn ast::Expr>> = self.bool_list(Token::C(']'));
                 self.next_tok();
 
-                return Box::new(ast::array::ArrayLiteral { values: array });
+                return Box::new(ast::compound::ArrayLiteral { values: array });
             }
             Token::Integer(i) => {
                 let x = Box::new(ast::Const {
@@ -486,7 +523,8 @@ impl Parser {
                 return x;
             }
             Token::Word(_) => {
-                let id = self.cur_scope.get(self.lookahead.clone()).unwrap();
+                let id_tok = self.lookahead.clone();
+                let id = self.cur_scope.get(id_tok.clone());
                 self.next_tok();
 
                 if self.lookahead == Token::C('[') {
@@ -496,8 +534,8 @@ impl Parser {
                     let index = self.bool();
                     self.match_tok(Token::C(']'));
 
-                    return Box::new(ast::array::ArrayIndex {
-                        arr: Box::new(id),
+                    return Box::new(ast::compound::ArrayIndex {
+                        arr: Box::new(id.unwrap()),
                         index,
                     });
                 } else if self.lookahead == Token::C('(') {
@@ -507,11 +545,35 @@ impl Parser {
                     self.next_tok();
 
                     return Box::new(ast::func::FuncCall {
-                        func: Box::new(id),
+                        func: Box::new(id.unwrap()),
                         params,
                     });
+                } else if self.lookahead == Token::C('{') {
+                    // Struct literal
+                    self.next_tok();
+                    let mut list = vec![];
+
+                    while self.lookahead != Token::C('}') {
+                        if self.lookahead == Token::C(',') {
+                            self.next_tok();
+                        }
+
+                        let name = self.lookahead.clone().into_word().unwrap();
+                        self.next_tok();
+                        self.match_tok(Token::C(':'));
+
+                        let value = self.bool();
+
+                        list.push((name, value));
+                    }
+                    self.next_tok();
+
+                    return Box::new(ast::compound::StructLiteral {
+                        strct: id_tok.into_word().unwrap(),
+                        values: list,
+                    });
                 } else {
-                    return Box::new(id);
+                    return Box::new(id.unwrap());
                 }
             }
             _ => panic!("syntax error: token {:?}", self.lookahead),
