@@ -1,7 +1,7 @@
 use crate::{
     ast::{self, NullStmt},
     lexer::{Lexer, Token},
-    symbols,
+    scope,
     tac::{self, DataType},
 };
 
@@ -9,7 +9,7 @@ pub struct Parser {
     lexer: Lexer,
     lookahead: Token,
 
-    cur_scope: symbols::Scope,
+    cur_scope: scope::Scope,
     prog: tac::Prog,
 }
 
@@ -18,7 +18,7 @@ impl Parser {
         let mut p = Parser {
             lexer,
             prog: tac::Prog::new(),
-            cur_scope: symbols::Scope::new(None),
+            cur_scope: scope::Scope::new(None),
             lookahead: Token::C(' '),
         };
         p.next_tok();
@@ -52,13 +52,13 @@ impl Parser {
 
         // Replace the current scope with a null one, then set the current scope to a new one
         // containing the previous.
-        let prev = std::mem::replace(&mut self.cur_scope, symbols::Scope::new(None));
-        self.cur_scope = symbols::Scope::new(Some(Box::new(prev)));
+        let prev = std::mem::replace(&mut self.cur_scope, scope::Scope::new(None));
+        self.cur_scope = scope::Scope::new(Some(Box::new(prev)));
 
         let s = self.stmts();
 
         // Replace the current scope with a null one, then set the current scope to the previous one.
-        let cur = std::mem::replace(&mut self.cur_scope, symbols::Scope::new(None));
+        let cur = std::mem::replace(&mut self.cur_scope, scope::Scope::new(None));
         self.cur_scope = cur.take_prev();
 
         self.match_tok(Token::C('}'));
@@ -108,68 +108,95 @@ impl Parser {
                     stmt: body,
                 });
             }
-            // Token::Func => {
-            //     self.next_tok();
+            Token::Func => {
+                self.next_tok();
 
-            //     let name = self.lookahead.clone();
-            //     self.next_tok();
+                let name = self.lookahead.clone();
+                self.next_tok();
 
-            //     // Parse the function signature
-            //     let params: Vec<Ident> = self
-            //         .decl_list()
-            //         .iter()
-            //         .map(|p| {
-            //             let ident = ast::Ident::new(p.0.clone(), p.1.clone(), &mut self.prog);
-            //             self.cur_scope.put(p.0.clone(), *ident.clone());
-            //             return *ident;
-            //         })
-            //         .collect();
+                // Create new scope from previous
+                self.cur_scope = scope::Scope::new(Some(Box::new(std::mem::replace(
+                    &mut self.cur_scope,
+                    scope::Scope::new(None),
+                ))));
 
-            //     let returns: Vec<Ident> = self
-            //         .decl_list()
-            //         .iter()
-            //         .map(|p| {
-            //             let ident = ast::Ident::new(p.0.clone(), p.1.clone(), &mut self.prog);
-            //             self.cur_scope.put(p.0.clone(), *ident.clone());
-            //             return *ident;
-            //         })
-            //         .collect();
+                // Parse the function signature
+                let params: Vec<ast::Ident> = self
+                    .decl_list()
+                    .iter()
+                    .map(|p| {
+                        let ident = ast::Ident {
+                            name: p.0.clone(),
+                            data_type: p.1.clone(),
+                            addr: self.prog.allocate_var(),
+                        };
+                        self.cur_scope.put(p.0.clone(), ident.clone());
+                        return ident;
+                    })
+                    .collect();
 
-            //     // Parse the function body
-            //     let body = self.block();
+                let returns = self.type_list();
 
-            //     // Create the data type for the function
-            //     let params_types: Vec<DataType> =
-            //         params.iter().map(|p| p.data_type.clone()).collect();
-            //     let returns_types: Vec<DataType> =
-            //         returns.iter().map(|p| p.data_type.clone()).collect();
+                // Parse the function body
+                let body = self.block();
 
-            //     let name_ident = ast::Ident::new(
-            //         name.clone(),
-            //         DataType::Func {
-            //             params: params_types.clone(),
-            //             returns: returns_types.clone(),
-            //         },
-            //         &mut self.prog,
-            //     );
+                // Create the data type for the function
+                let params_types: Vec<DataType> =
+                    params.iter().map(|p| p.data_type.clone()).collect();
 
-            //     // Return the function
-            //     let params_mem = params.iter().map(|p| p.addr).collect();
-            //     let returns_mem = returns.iter().map(|p| p.addr).collect();
+                // Assign the func to the name
+                let name_ident = ast::Ident {
+                    name: name.clone(),
+                    data_type: DataType::Function {
+                        params: params_types.clone(),
+                        returns: returns.clone(),
+                    },
+                    addr: self.prog.allocate_var(),
+                };
 
-            //     return Box::new(FuncImpl {
-            //         name,
-            //         name_addr: name_ident.addr,
-            //         body,
-            //         params: params_types,
-            //         returns: returns_types,
-            //         params_mem,
-            //         returns_mem,
-            //     });
-            // }
+                // pop the func scope
+                self.cur_scope =
+                    std::mem::replace(&mut self.cur_scope, scope::Scope::new(None)).take_prev();
+                self.cur_scope.put(name, name_ident.clone());
+
+                // Return the function
+                return Box::new(ast::func::FuncImpl {
+                    id: name_ident,
+                    body,
+                    params: params_types,
+                    returns: returns,
+                });
+            }
+            Token::Return => {
+                self.next_tok();
+
+                // Collect the parameters
+                let mut values = vec![];
+                while self.lookahead.clone() != Token::C(';') {
+                    values.push(self.bool());
+                }
+                self.next_tok();
+
+                return Box::new(ast::func::Return { values });
+            }
             Token::C('{') => return self.block(),
             _ => return self.assign(),
         }
+    }
+
+    // Caller is responsible for the start and end token ()/[]
+    fn bool_list(&mut self, end_tok: Token) -> Vec<Box<dyn ast::Expr>> {
+        let mut list = vec![];
+
+        while self.lookahead != end_tok {
+            if self.lookahead == Token::C(',') {
+                self.next_tok();
+            }
+
+            list.push(self.bool());
+        }
+
+        return list;
     }
 
     fn decl_list(&mut self) -> Vec<(Token, DataType)> {
@@ -186,14 +213,36 @@ impl Parser {
                 Token::Word(w) => Token::Word(w),
                 _ => panic!("syntax error: decl must have identifier"),
             };
-
             self.next_tok();
+
             let data_type = match self.lookahead.clone() {
                 Token::Type(s) => s,
                 _ => panic!("syntax error: decl must have a type"),
             };
+            self.next_tok();
 
             list.push((name, data_type));
+        }
+        self.next_tok();
+
+        return list;
+    }
+
+    fn type_list(&mut self) -> Vec<DataType> {
+        self.match_tok(Token::C('('));
+
+        let mut list = Vec::new();
+
+        while self.lookahead != Token::C(')') {
+            if self.lookahead == Token::C(',') {
+                self.next_tok();
+            }
+
+            let data_type = match self.lookahead.clone() {
+                Token::Type(s) => s,
+                _ => panic!("syntax error: must have a type"),
+            };
+            list.push(data_type);
 
             self.next_tok();
         }
@@ -246,33 +295,23 @@ impl Parser {
                 });
             }
             Token::C('(') => {
-                // Function call
+                // Function call (returns ignored)
+                self.next_tok();
+                let params = self.bool_list(Token::C(')'));
+                self.next_tok();
 
-                // // Parse function parameters
-                // self.next_tok();
-                // let mut params: Vec<Box<dyn ast::Expr>> = Vec::new();
+                let id = self
+                    .cur_scope
+                    .get(id_tok.clone())
+                    .expect(&format!("unknown identifier: {}", id_tok));
 
-                // 'outer: loop {
-                //     params.push(self.bool());
-
-                //     match self.lookahead {
-                //         Token::C(')') => {
-                //             self.next_tok();
-                //             break 'outer;
-                //         }
-                //         _ => {
-                //             self.match_tok(Token::C(','));
-                //         }
-                //     };
-                // }
-
-                // stmt = Box::new(ast::FuncCall {
-                //     func: Box::new(id),
-                //     params,
-                // });
-                unimplemented!()
+                stmt = Box::new(ast::func::FuncCall {
+                    func: Box::new(id),
+                    params,
+                });
             }
             Token::C('[') => {
+                // Array index
                 self.next_tok();
                 let index = self.bool();
                 self.match_tok(Token::C(']'));
@@ -409,21 +448,8 @@ impl Parser {
             Token::C('[') => {
                 // Array literal
                 self.next_tok();
-                let mut array: Vec<Box<dyn ast::Expr>> = Vec::new();
-
-                'outer: loop {
-                    array.push(self.bool());
-
-                    match self.lookahead {
-                        Token::C(']') => {
-                            self.next_tok();
-                            break 'outer;
-                        }
-                        _ => {
-                            self.match_tok(Token::C(','));
-                        }
-                    };
-                }
+                let array: Vec<Box<dyn ast::Expr>> = self.bool_list(Token::C(']'));
+                self.next_tok();
 
                 return Box::new(ast::array::ArrayLiteral { values: array });
             }
@@ -464,6 +490,7 @@ impl Parser {
                 self.next_tok();
 
                 if self.lookahead == Token::C('[') {
+                    // Array index
                     self.next_tok();
 
                     let index = self.bool();
@@ -472,6 +499,16 @@ impl Parser {
                     return Box::new(ast::array::ArrayIndex {
                         arr: Box::new(id),
                         index,
+                    });
+                } else if self.lookahead == Token::C('(') {
+                    // Function call as an expression
+                    self.next_tok();
+                    let params: Vec<Box<dyn ast::Expr>> = self.bool_list(Token::C(')'));
+                    self.next_tok();
+
+                    return Box::new(ast::func::FuncCall {
+                        func: Box::new(id),
+                        params,
                     });
                 } else {
                     return Box::new(id);

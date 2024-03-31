@@ -26,6 +26,7 @@ pub enum Token {
     True,
     False,
     Func,
+    Return,
 
     DeclAssign,
     BoolOr,
@@ -58,7 +59,7 @@ impl Lexer {
         wt.insert("float".to_string(), Token::Type(tac::DataType::Float));
         wt.insert("bool".to_string(), Token::Type(tac::DataType::Bool));
         wt.insert("func".to_string(), Token::Func);
-        wt.insert(":=".to_string(), Token::DeclAssign);
+        wt.insert("return".to_string(), Token::Return);
 
         let mut l = Lexer {
             source: src,
