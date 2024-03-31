@@ -18,6 +18,33 @@ impl Label {
     }
 }
 
+pub struct Struct {
+    types: Vec<DataType>,
+    names: Map<String, usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, EnumAsInner)]
+pub enum DataType {
+    Integer,
+    Float,
+    Bool,
+    Array(Box<DataType>),
+    Struct(String), // the name of struct
+    Function {
+        params: Vec<DataType>,
+        returns: Vec<DataType>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, EnumAsInner)]
+pub enum DataVal {
+    Integer(i64),
+    Float(f64),
+    Bool(bool),
+    Compound(Vec<DataVal>),
+    Function(Label),
+}
+
 #[derive(Debug, Clone)]
 pub enum Instr {
     BinaryExpr {
@@ -46,46 +73,17 @@ pub enum Instr {
         if_false: Label,
     },
 
-    Goto {
-        label: Label,
-    },
+    Discard, // discrads an element from the eval_stack
 
     ArrayGet,
     ArraySet,
     ArrayCreate,
 
-    Call {
-        // Sets the return address on the call stack, then does a goto
-        label: Label,
+    Goto {
+        label: Label, // so far no need for a dynamic goto
     },
-
+    Call, // Sets the return address on the call stack, then does a goto to the function
     Return,
-}
-
-pub struct Struct {
-    types: Vec<DataType>,
-    names: Map<String, usize>,
-}
-
-#[derive(Clone, Debug, PartialEq, EnumAsInner)]
-pub enum DataType {
-    Integer,
-    Float,
-    Bool,
-    Array(Box<DataType>),
-    Struct(String), // the name of struct
-    Func {
-        params: Vec<DataType>,
-        returns: Vec<DataType>,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq, EnumAsInner)]
-pub enum DataVal {
-    Integer(i64),
-    Float(f64),
-    Bool(bool),
-    Compound(Vec<DataVal>),
 }
 
 macro_rules! arith {
@@ -108,10 +106,8 @@ macro_rules! arith {
 
 macro_rules! rel {
     ($self:ident, $op:expr) => {{
-        println!("stack {:?}", $self.eval_stack);
         let x = $self.eval_stack.pop().unwrap();
         let y = $self.eval_stack.pop().unwrap();
-        println!("stack 2 {:?}", $self.eval_stack);
         match x {
             DataVal::Integer(_) => $self.eval_stack.push(DataVal::Bool($op(
                 &x.into_integer().unwrap(),
@@ -247,20 +243,23 @@ impl Prog {
                 Instr::Goto { label } => {
                     self.ip = label.0 - 1;
                 }
-                Instr::Call { label } => {
+                Instr::Call => {
+                    let f = self.eval_stack.pop().unwrap().into_function().unwrap();
                     self.call_stack.push(self.ip + 1);
-                    self.ip = label.0 - 1;
+                    self.ip = f.0 - 1;
                 }
                 Instr::Return {} => match self.call_stack.pop() {
                     Some(label) => {
-                        self.ip = label;
+                        self.ip = label - 1;
                     }
                     None => {
                         // Return in main function
                         return;
                     }
                 },
-                _ => unimplemented!("TODO"),
+                Instr::Discard => {
+                    self.eval_stack.pop();
+                }
             };
             self.ip += 1;
         }

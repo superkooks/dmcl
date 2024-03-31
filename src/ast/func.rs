@@ -1,136 +1,130 @@
+use crate::{
+    ast::Const, ast::Expr, ast::Ident, ast::Stmt, lexer, tac, tac::DataType, tac::DataVal,
+};
+
 // A func call can be used as an expression when it only returns one variable
-// pub struct FuncCall {
-//     pub params: Vec<Box<dyn Expr>>,
-//     pub func: Box<dyn Expr>,
-// }
+pub struct FuncCall {
+    pub params: Vec<Box<dyn Expr>>,
+    pub func: Box<dyn Expr>,
+}
 
-// impl Expr for FuncCall {
-//     fn emit(mut self: Box<Self>, prog: &mut tac::Prog) {
-//         let func_addr = self.func.emit(prog);
+impl Expr for FuncCall {
+    fn emit(mut self: Box<Self>, prog: &mut tac::Prog) {
+        self.func.emit(prog);
 
-//         // Evaluate all of the parameters
-//         for (i, p_ref) in self.params.iter_mut().enumerate() {
-//             let p = std::mem::replace(
-//                 p_ref,
-//                 Box::new(Const {
-//                     value: DataVal::Bool(false),
-//                     data_type: DataType::Bool,
-//                 }),
-//             );
-//             let from = p.emit(prog);
+        // Evaluate all of the parameters
+        for idx in 0..self.params.len() {
+            let p = std::mem::replace(
+                &mut self.params[idx],
+                Box::new(Const {
+                    value: DataVal::Bool(false),
+                    data_type: DataType::Bool,
+                }),
+            );
 
-//             // Find where the paramater should be stored
-//             let param_addr = prog.allocate_var();
-//             let index = prog.allocate_var();
-//             prog.add_instr(tac::Instr::LoadConst {
-//                 v: tac::DataVal::Integer(i as i64),
-//                 addr: index,
-//             });
-//             prog.add_instr(tac::Instr::ArrayGet {
-//                 index: index,
-//                 arr: params_mem,
-//                 to: param_addr,
-//             });
+            p.emit(prog);
+        }
 
-//             // Assign the value to the parameter
-//             prog.add_instr(tac::Instr::AssignExpr {
-//                 op: lexer::Token::C('='),
-//                 to: param_addr,
-//                 x: from,
-//                 y: tac::Addr(0),
-//             });
-//         }
+        // Call the function
+        prog.add_instr(tac::Instr::Call);
+    }
 
-//         // Call the function
-//         prog.add_instr(tac::Instr::Call { label });
+    fn in_type(&self) -> Vec<DataType> {
+        return self.func.out_type().into_function().unwrap().0;
+    }
 
-//         // Return the first return
-//         return returns_mem[0];
-//     }
+    fn out_type(&self) -> DataType {
+        let returns = self.func.out_type().into_function().unwrap().1;
+        if returns.len() == 1 {
+            return returns[0].clone();
+        } else {
+            panic!("can only use func as expression when it has one return")
+        }
+    }
+}
 
-//     fn in_type(&self) -> Vec<DataType> {
-//         // Since func call isn't an infix operator, it doesn't have an in type
-//         return self.params.iter().map(|p| p.out_type()).collect();
-//     }
+impl Stmt for FuncCall {
+    fn emit(mut self: Box<Self>, prog: &mut tac::Prog) {
+        self.func.emit(prog);
 
-//     fn out_type(&self) -> DataType {
-//         match self.func.out_type() {
-//             DataType::Func { params, returns } => {
-//                 if returns.len() == 1 {
-//                     return returns[0];
-//                 } else {
-//                     panic!("cannot create expression for function that has multiple returns")
-//                 }
-//             }
-//             _ => panic!("cannot call non-function"),
-//         }
-//     }
-// }
+        // Evaluate all of the parameters
+        for idx in 0..self.params.len() {
+            let p = std::mem::replace(
+                &mut self.params[idx],
+                Box::new(Const {
+                    value: DataVal::Bool(false),
+                    data_type: DataType::Bool,
+                }),
+            );
 
-// impl Stmt for FuncCall {
-//     // fn emit(mut self: Box<Self>, prog: &mut tac::Prog) {
-//     //     // Evaluate all of the parameters
-//     //     for (i, p_ref) in self.params.iter_mut().enumerate() {
-//     //         let p = std::mem::replace(
-//     //             p_ref,
-//     //             Box::new(Const {
-//     //                 value: DataVal::Bool(false),
-//     //             }),
-//     //         );
-//     //         let from = p.emit(prog);
-//     //         prog.add_instr(tac::Instr::AssignExpr {
-//     //             op: lexer::Token::C('='),
-//     //             to: params_mem[i],
-//     //             x: from,
-//     //             y: tac::Addr(0),
-//     //         });
-//     //     }
+            let from = p.emit(prog);
+        }
 
-//     //     // Call the function
-//     //     prog.add_instr(tac::Instr::Call { label });
-//     // }
-// }
+        // Call the function
+        prog.add_instr(tac::Instr::Call);
+    }
+}
 
-// pub struct FuncImpl {
-//     pub name: lexer::Token,
-//     pub name_addr: tac::Addr,
-//     pub body: Box<dyn Stmt>,
+pub struct FuncImpl {
+    pub id: Ident,
+    pub body: Box<dyn Stmt>,
 
-//     pub params: Vec<DataType>,
-//     pub returns: Vec<DataType>,
-//     pub params_mem: Vec<tac::Addr>,
-//     pub returns_mem: Vec<tac::Addr>,
-// }
+    pub params: Vec<DataType>,
+    pub returns: Vec<DataType>,
+}
 
-// impl Stmt for FuncImpl {
-//     fn emit(self: Box<Self>, prog: &mut tac::Prog) {
-//         // Goto after the function definition
-//         let goto = prog.add_temp_instr();
+impl Stmt for FuncImpl {
+    fn emit(self: Box<Self>, prog: &mut tac::Prog) {
+        // Assign this function to the variable where it is stored
+        prog.add_instr(tac::Instr::LoadConst {
+            v: tac::DataVal::Function(prog.next_label().next().next().next()),
+            // load, store, goto
+            // next, next, next
+        });
+        prog.add_instr(tac::Instr::StoreIdent { i: self.id.addr });
 
-//         // Assign this function to the variable where it is stored
-//         prog.add_instr(tac::Instr::LoadConst {
-//             addr: self.name_addr,
-//             v: tac::DataVal::Func {
-//                 params: self.params,
-//                 returns: self.returns,
-//                 label: prog.next_label().next(),
-//                 params_mem: self.params_mem,
-//                 returns_mem: self.returns_mem,
-//             },
-//         });
+        // Goto after the function definition
+        let goto = prog.add_temp_instr();
 
-//         // Emit the body
-//         self.body.emit(prog);
-//         prog.add_instr(tac::Instr::Return {});
+        // Emit the body
+        self.body.emit(prog);
 
-//         prog.mod_instr(
-//             goto,
-//             tac::Instr::Goto {
-//                 label: prog.next_label(),
-//             },
-//         )
-//     }
-// }
+        // just in case the function doesn't have a final return
+        prog.add_instr(tac::Instr::Return {});
+
+        prog.mod_instr(
+            goto,
+            tac::Instr::Goto {
+                label: prog.next_label(),
+            },
+        )
+    }
+}
+
+pub struct Return {
+    pub values: Vec<Box<dyn Expr>>,
+}
+
+impl Stmt for Return {
+    fn emit(mut self: Box<Self>, prog: &mut tac::Prog) {
+        // Evaluate each item, leaving it on the stack
+        for idx in 0..self.values.len() {
+            // In order to emit it, we need to own the value, which means
+            // we need to replace the value in the array with somthing
+            let v = std::mem::replace(
+                &mut self.values[idx],
+                Box::new(Const {
+                    value: DataVal::Bool(false),
+                    data_type: DataType::Bool,
+                }),
+            );
+
+            v.emit(prog);
+        }
+
+        prog.add_instr(tac::Instr::Return);
+    }
+}
 
 // pub struct MultiAssign {
 //     pub call: Label,

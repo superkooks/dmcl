@@ -1,7 +1,7 @@
 pub mod ast;
 pub mod lexer;
 pub mod parser;
-pub mod symbols;
+pub mod scope;
 pub mod tac;
 
 #[cfg(test)]
@@ -138,12 +138,12 @@ mod tests {
         let l = lexer::Lexer::new(
             "
 {
-    func rand() () {
-        int q;
-        q = 4;
+    func rand() (int) {
+        p := 4;
+        return p;
     }
 
-    rand()
+    p := rand();
 }"
             .chars()
             .collect(),
@@ -156,11 +156,8 @@ mod tests {
         prog.execute();
         println!("{:?}", prog.variables);
 
-        assert_eq!(prog.variables[0], tac::DataVal::Integer(5));
-        assert_eq!(prog.variables[1], tac::DataVal::Integer(6));
-        assert_eq!(prog.variables[3], tac::DataVal::Integer(7));
-        assert_eq!(prog.variables[4], tac::DataVal::Float(6.0));
-        assert_eq!(prog.variables[2], tac::DataVal::Integer(5));
+        assert_eq!(prog.variables[0], tac::DataVal::Integer(4));
+        assert_eq!(prog.variables[2], tac::DataVal::Integer(4));
     }
 
     #[test]
