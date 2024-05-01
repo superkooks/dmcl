@@ -41,8 +41,6 @@ impl Expr for Arith {
     fn emit(self: Box<Self>, prog: &mut tac::Prog) {
         self.y.emit(prog);
         self.x.emit(prog);
-
-        // Create temp address to store result
         prog.add_instr(tac::Instr::BinaryExpr { op: self.op });
     }
 

@@ -76,15 +76,15 @@ pub enum Instr {
 
     Discard, // discrads an element from the eval_stack
 
-    CompoundGet,
-    CompoundSet,
-    CompoundCreate,
+    CompoundGet,    // arr, index
+    CompoundSet,    // arr, index, value
+    CompoundCreate, // length
 
     Goto {
         label: Label, // so far no need for a dynamic goto
     },
-    Call, // Sets the return address on the call stack, then does a goto to the function
-    Return,
+    Call,   // Sets the return address on the call stack, then does a goto to the function
+    Return, // Pop the previous item on the callstack and goto it.
 }
 
 macro_rules! arith {
