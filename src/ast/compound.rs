@@ -34,10 +34,6 @@ impl Expr for ArrayLiteral {
         }
     }
 
-    fn in_type(&self, prog: &tac::Prog) -> Vec<DataType> {
-        return vec![self.values[0].out_type(prog); self.values.len()];
-    }
-
     fn out_type(&self, prog: &tac::Prog) -> DataType {
         return DataType::Array(Box::new(self.values[0].out_type(prog)));
     }
@@ -53,10 +49,6 @@ impl Expr for ArrayIndex {
         self.arr.emit(prog);
         self.index.emit(prog);
         prog.add_instr(tac::Instr::CompoundGet);
-    }
-
-    fn in_type(&self, prog: &tac::Prog) -> Vec<DataType> {
-        return vec![self.arr.out_type(prog), DataType::Integer];
     }
 
     fn out_type(&self, prog: &tac::Prog) -> DataType {
@@ -113,10 +105,6 @@ impl Expr for StructAccess {
         prog.add_instr(tac::Instr::CompoundGet);
     }
 
-    fn in_type(&self, prog: &tac::Prog) -> Vec<DataType> {
-        return vec![self.out_type(prog)];
-    }
-
     fn out_type(&self, prog: &tac::Prog) -> DataType {
         let name = self.expr.out_type(prog).into_struct().unwrap();
         let strct = prog.user_structs.get(&name).unwrap().to_owned();
@@ -158,11 +146,6 @@ impl Expr for StructLiteral {
 
             prog.add_instr(tac::Instr::CompoundSet);
         }
-    }
-
-    fn in_type(&self, _prog: &tac::Prog) -> Vec<DataType> {
-        // TODO Fix
-        return vec![];
     }
 
     fn out_type(&self, _prog: &tac::Prog) -> DataType {
