@@ -10,7 +10,7 @@ pub trait Expr {
     // Resolve the expression, potentially adding instructions to the program,
     // returning the address where the value is stored
     fn emit(self: Box<Self>, prog: &mut tac::Prog);
-    fn in_type(&self, prog: &tac::Prog) -> Vec<DataType>;
+    // fn in_type(&self, prog: &tac::Prog) -> Vec<DataType>;
     fn out_type(&self, prog: &tac::Prog) -> DataType;
 }
 
@@ -24,10 +24,6 @@ pub struct Ident {
 impl Expr for Ident {
     fn emit(self: Box<Self>, prog: &mut tac::Prog) {
         prog.add_instr(tac::Instr::LoadIdent { i: self.addr });
-    }
-
-    fn in_type(&self, _prog: &tac::Prog) -> Vec<DataType> {
-        return vec![];
     }
 
     fn out_type(&self, _prog: &tac::Prog) -> DataType {
@@ -48,16 +44,6 @@ impl Expr for Arith {
 
         // Create temp address to store result
         prog.add_instr(tac::Instr::BinaryExpr { op: self.op });
-    }
-
-    fn in_type(&self, prog: &tac::Prog) -> Vec<DataType> {
-        let x = self.x.out_type(prog);
-        let y = self.y.out_type(prog);
-        if x == y {
-            return vec![x, y];
-        } else {
-            panic!("type error: inputs to arith have different types")
-        }
     }
 
     fn out_type(&self, prog: &tac::Prog) -> DataType {
@@ -82,10 +68,6 @@ impl Expr for Unary {
         prog.add_instr(tac::Instr::UnaryExpr { op: self.op });
     }
 
-    fn in_type(&self, prog: &tac::Prog) -> Vec<DataType> {
-        return vec![self.x.out_type(prog)];
-    }
-
     fn out_type(&self, prog: &tac::Prog) -> DataType {
         return self.x.out_type(prog);
     }
@@ -99,10 +81,6 @@ pub struct Const {
 impl Expr for Const {
     fn emit(self: Box<Self>, prog: &mut tac::Prog) {
         prog.add_instr(tac::Instr::LoadConst { v: self.value });
-    }
-
-    fn in_type(&self, _prog: &tac::Prog) -> Vec<DataType> {
-        return vec![];
     }
 
     fn out_type(&self, _prog: &tac::Prog) -> DataType {
@@ -160,10 +138,6 @@ impl Expr for BoolOr {
         );
     }
 
-    fn in_type(&self, _prog: &tac::Prog) -> Vec<DataType> {
-        return vec![DataType::Bool, DataType::Bool];
-    }
-
     fn out_type(&self, _prog: &tac::Prog) -> DataType {
         return DataType::Bool;
     }
@@ -219,10 +193,6 @@ impl Expr for BoolAnd {
         );
     }
 
-    fn in_type(&self, _prog: &tac::Prog) -> Vec<DataType> {
-        return vec![DataType::Bool, DataType::Bool];
-    }
-
     fn out_type(&self, _prog: &tac::Prog) -> DataType {
         return DataType::Bool;
     }
@@ -265,10 +235,6 @@ impl Expr for BoolNot {
                 label: f_branch.next(),
             },
         );
-    }
-
-    fn in_type(&self, _prog: &tac::Prog) -> Vec<DataType> {
-        return vec![DataType::Bool];
     }
 
     fn out_type(&self, _prog: &tac::Prog) -> DataType {

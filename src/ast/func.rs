@@ -27,10 +27,6 @@ impl Expr for FuncCall {
         prog.add_instr(tac::Instr::Call);
     }
 
-    fn in_type(&self, prog: &tac::Prog) -> Vec<DataType> {
-        return self.func.out_type(prog).into_function().unwrap().0;
-    }
-
     fn out_type(&self, prog: &tac::Prog) -> DataType {
         let returns = self.func.out_type(prog).into_function().unwrap().1;
         if returns.len() == 1 {
