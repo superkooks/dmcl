@@ -119,8 +119,3 @@ impl Stmt for Return {
         prog.add_instr(tac::Instr::Return);
     }
 }
-
-// pub struct MultiAssign {
-//     pub call: Label,
-//     pub
-// }
