@@ -14,15 +14,13 @@ mod tests {
     fn lexing() {
         let mut l = lexer::Lexer::new(
             "
-{
     p := 0;
     q := 1;
     while p < 200 {
         t := p + q;
         q = p;
         p = t;
-    }
-}"
+    }"
             .chars()
             .collect(),
         );
@@ -39,7 +37,6 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::C('{'),
                 Token::Word("p".into()),
                 Token::DeclAssign,
                 Token::Integer(0),
@@ -67,7 +64,6 @@ mod tests {
                 Token::C('='),
                 Token::Word("t".into()),
                 Token::C(';'),
-                Token::C('}'),
                 Token::C('}')
             ]
         )
@@ -77,15 +73,13 @@ mod tests {
     fn parsing() {
         let l = lexer::Lexer::new(
             "
-{
     p := 0;
     q := 1;
     while p < 200 {
         t := p + q;
         q = p;
         p = t;
-    }
-}"
+    }"
             .chars()
             .collect(),
         );
@@ -105,7 +99,6 @@ mod tests {
     fn scopes() {
         let l = lexer::Lexer::new(
             "
-{
     p := 5;
     q := 6;
     if true {
@@ -113,10 +106,9 @@ mod tests {
         q := 6.0f;
     }
 
-    r := p;
-}"
-            .chars()
-            .collect(),
+    r := p;"
+                .chars()
+                .collect(),
         );
 
         let mut par = parser::Parser::new(l);
@@ -137,16 +129,20 @@ mod tests {
     fn functions() {
         let l = lexer::Lexer::new(
             "
-{
     func rand() (int) {
         p := 4;
         return p;
     }
 
     p := rand();
-}"
-            .chars()
-            .collect(),
+
+    func test() () {
+        idk := 5;
+    }
+
+    test();"
+                .chars()
+                .collect(),
         );
 
         let mut par = parser::Parser::new(l);
@@ -158,20 +154,19 @@ mod tests {
 
         assert_eq!(prog.variables[0], tac::DataVal::Integer(4));
         assert_eq!(prog.variables[2], tac::DataVal::Integer(4));
+        assert_eq!(prog.variables[3], tac::DataVal::Integer(5));
     }
 
     #[test]
     fn arrays() {
         let l = lexer::Lexer::new(
             "
-{
     p := 5;
     q := [2, 2, 3, p];
     q[0] = 1;
-    p = q[0];
-}"
-            .chars()
-            .collect(),
+    p = q[0];"
+                .chars()
+                .collect(),
         );
 
         let mut par = parser::Parser::new(l);
@@ -188,7 +183,6 @@ mod tests {
     fn structs() {
         let l = lexer::Lexer::new(
             "
-{
     struct Test {
         n1: int,
         n2: float
@@ -199,10 +193,9 @@ mod tests {
         n2: 6.0f
     };
     q := p.n1;
-    r := p.n2;
-}"
-            .chars()
-            .collect(),
+    r := p.n2;"
+                .chars()
+                .collect(),
         );
 
         let mut par = parser::Parser::new(l);

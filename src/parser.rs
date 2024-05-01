@@ -43,7 +43,7 @@ impl Parser {
     }
 
     pub fn program(&mut self) -> &mut tac::Prog {
-        let s = self.block();
+        let s = self.stmts();
         s.emit(&mut self.prog);
 
         return &mut self.prog;
@@ -69,7 +69,7 @@ impl Parser {
     }
 
     fn stmts(&mut self) -> Box<dyn ast::Stmt> {
-        if self.lookahead == Token::C('}') {
+        if self.lookahead == Token::C('}') || self.lookahead == Token::EOF {
             return Box::new(ast::NullStmt {});
         } else {
             return Box::new(ast::Seq {
