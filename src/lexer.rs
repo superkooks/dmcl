@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use enum_as_inner::EnumAsInner;
 
-use crate::tac;
+use crate::stac;
 
 pub struct Lexer {
     source: Vec<char>,
@@ -20,7 +20,7 @@ pub enum Token {
     Integer(i64),
     Float(f64),
     Word(String),
-    Type(tac::DataType),
+    Type(stac::DataType),
 
     If,
     Else,
@@ -58,9 +58,9 @@ impl Lexer {
         wt.insert("while".to_string(), Token::While);
         wt.insert("true".to_string(), Token::True);
         wt.insert("false".to_string(), Token::False);
-        wt.insert("int".to_string(), Token::Type(tac::DataType::Integer));
-        wt.insert("float".to_string(), Token::Type(tac::DataType::Float));
-        wt.insert("bool".to_string(), Token::Type(tac::DataType::Bool));
+        wt.insert("int".to_string(), Token::Type(stac::DataType::Integer));
+        wt.insert("float".to_string(), Token::Type(stac::DataType::Float));
+        wt.insert("bool".to_string(), Token::Type(stac::DataType::Bool));
         wt.insert("func".to_string(), Token::Func);
         wt.insert("return".to_string(), Token::Return);
         wt.insert("struct".to_string(), Token::Struct);

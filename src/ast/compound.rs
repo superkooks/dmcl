@@ -1,16 +1,16 @@
-use crate::{ast::Const, ast::Expr, ast::Ident, ast::Stmt, tac, tac::DataType, tac::DataVal};
+use crate::{ast::Const, ast::Expr, ast::Ident, ast::Stmt, stac, stac::DataType, stac::DataVal};
 
 pub struct ArrayLiteral {
     pub values: Vec<Box<dyn Expr>>,
 }
 
 impl Expr for ArrayLiteral {
-    fn emit(mut self: Box<Self>, prog: &mut tac::Prog) {
+    fn emit(mut self: Box<Self>, prog: &mut stac::Prog) {
         // Create the array
-        prog.add_instr(tac::Instr::LoadConst {
+        prog.add_instr(stac::Instr::LoadConst {
             v: DataVal::Integer(self.values.len() as i64),
         });
-        prog.add_instr(tac::Instr::CompoundCreate);
+        prog.add_instr(stac::Instr::CompoundCreate);
 
         // For each value in the array, evaluate it, and set it in the array
         for idx in 0..self.values.len() {
@@ -24,17 +24,17 @@ impl Expr for ArrayLiteral {
                 }),
             );
 
-            prog.add_instr(tac::Instr::LoadConst {
+            prog.add_instr(stac::Instr::LoadConst {
                 v: DataVal::Integer(idx as i64),
             });
 
             v.emit(prog);
 
-            prog.add_instr(tac::Instr::CompoundSet);
+            prog.add_instr(stac::Instr::CompoundSet);
         }
     }
 
-    fn out_type(&self, prog: &tac::Prog) -> DataType {
+    fn out_type(&self, prog: &stac::Prog) -> DataType {
         return DataType::Array(Box::new(self.values[0].out_type(prog)));
     }
 }
@@ -45,13 +45,13 @@ pub struct ArrayIndex {
 }
 
 impl Expr for ArrayIndex {
-    fn emit(self: Box<Self>, prog: &mut tac::Prog) {
+    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
         self.arr.emit(prog);
         self.index.emit(prog);
-        prog.add_instr(tac::Instr::CompoundGet);
+        prog.add_instr(stac::Instr::CompoundGet);
     }
 
-    fn out_type(&self, prog: &tac::Prog) -> DataType {
+    fn out_type(&self, prog: &stac::Prog) -> DataType {
         return *self.arr.out_type(prog).into_array().unwrap();
     }
 }
@@ -63,9 +63,9 @@ pub struct AssignArray {
 }
 
 impl Stmt for AssignArray {
-    fn emit(self: Box<Self>, prog: &mut tac::Prog) {
+    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
         // Load the array
-        prog.add_instr(tac::Instr::LoadIdent { i: self.id.addr });
+        prog.add_instr(stac::Instr::LoadIdent { i: self.id.addr });
 
         // Resolve the index
         self.index.emit(prog);
@@ -74,10 +74,10 @@ impl Stmt for AssignArray {
         self.expr.emit(prog);
 
         // Set the value in the array
-        prog.add_instr(tac::Instr::CompoundSet);
+        prog.add_instr(stac::Instr::CompoundSet);
 
         // Set the id to the array
-        prog.add_instr(tac::Instr::StoreIdent { i: self.id.addr });
+        prog.add_instr(stac::Instr::StoreIdent { i: self.id.addr });
     }
 }
 
@@ -87,7 +87,7 @@ pub struct StructAccess {
 }
 
 impl Expr for StructAccess {
-    fn emit(self: Box<Self>, prog: &mut tac::Prog) {
+    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
         // Lookup index for field
         let strct = prog
             .user_structs
@@ -98,14 +98,14 @@ impl Expr for StructAccess {
         self.expr.emit(prog);
 
         let idx = *strct.names.get(&self.field).unwrap();
-        prog.add_instr(tac::Instr::LoadConst {
+        prog.add_instr(stac::Instr::LoadConst {
             v: DataVal::Integer(idx as i64),
         });
 
-        prog.add_instr(tac::Instr::CompoundGet);
+        prog.add_instr(stac::Instr::CompoundGet);
     }
 
-    fn out_type(&self, prog: &tac::Prog) -> DataType {
+    fn out_type(&self, prog: &stac::Prog) -> DataType {
         let name = self.expr.out_type(prog).into_struct().unwrap();
         let strct = prog.user_structs.get(&name).unwrap().to_owned();
         return strct.types[*strct.names.get(&self.field).unwrap()].clone();
@@ -118,20 +118,20 @@ pub struct StructLiteral {
 }
 
 impl Expr for StructLiteral {
-    fn emit(self: Box<Self>, prog: &mut tac::Prog) {
+    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
         // Resolve the struct
         let strct = prog.user_structs.get(&self.strct).unwrap().to_owned();
 
         // Create an empty struct
-        prog.add_instr(tac::Instr::LoadConst {
+        prog.add_instr(stac::Instr::LoadConst {
             v: DataVal::Integer(strct.types.len() as i64),
         });
-        prog.add_instr(tac::Instr::CompoundCreate);
+        prog.add_instr(stac::Instr::CompoundCreate);
 
         // Evaluate each value and assign it to the field
         for (field, ref mut value) in self.values {
             let idx = *strct.names.get(&field).unwrap();
-            prog.add_instr(tac::Instr::LoadConst {
+            prog.add_instr(stac::Instr::LoadConst {
                 v: DataVal::Integer(idx as i64),
             });
 
@@ -144,11 +144,11 @@ impl Expr for StructLiteral {
             );
             val.emit(prog);
 
-            prog.add_instr(tac::Instr::CompoundSet);
+            prog.add_instr(stac::Instr::CompoundSet);
         }
     }
 
-    fn out_type(&self, _prog: &tac::Prog) -> DataType {
+    fn out_type(&self, _prog: &stac::Prog) -> DataType {
         return DataType::Struct(self.strct.clone());
     }
 }
@@ -160,9 +160,9 @@ pub struct AssignStruct {
 }
 
 impl Stmt for AssignStruct {
-    fn emit(self: Box<Self>, prog: &mut tac::Prog) {
+    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
         // Load the struct
-        prog.add_instr(tac::Instr::LoadIdent { i: self.id.addr });
+        prog.add_instr(stac::Instr::LoadIdent { i: self.id.addr });
 
         // Resolve the field to an index
         let strct = prog
@@ -171,7 +171,7 @@ impl Stmt for AssignStruct {
             .unwrap();
 
         let idx = *strct.names.get(&self.field).unwrap();
-        prog.add_instr(tac::Instr::LoadConst {
+        prog.add_instr(stac::Instr::LoadConst {
             v: DataVal::Integer(idx as i64),
         });
 
@@ -179,6 +179,6 @@ impl Stmt for AssignStruct {
         self.expr.emit(prog);
 
         // Set the field in the struct
-        prog.add_instr(tac::Instr::CompoundSet);
+        prog.add_instr(stac::Instr::CompoundSet);
     }
 }
