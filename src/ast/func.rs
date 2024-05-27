@@ -1,4 +1,4 @@
-use crate::{ast::Const, ast::Expr, ast::Ident, ast::Stmt, tac, tac::DataType, tac::DataVal};
+use crate::{ast::Const, ast::Expr, ast::Ident, ast::Stmt, stac, stac::DataType, stac::DataVal};
 
 // A func call can be used as an expression when it only returns one variable
 pub struct FuncCall {
@@ -7,9 +7,7 @@ pub struct FuncCall {
 }
 
 impl Expr for FuncCall {
-    fn emit(mut self: Box<Self>, prog: &mut tac::Prog) {
-        self.func.emit(prog);
-
+    fn emit(mut self: Box<Self>, prog: &mut stac::Prog) {
         // Evaluate all of the parameters
         for idx in 0..self.params.len() {
             let p = std::mem::replace(
@@ -24,10 +22,11 @@ impl Expr for FuncCall {
         }
 
         // Call the function
-        prog.add_instr(tac::Instr::Call);
+        self.func.emit(prog);
+        prog.add_instr(stac::Instr::Call);
     }
 
-    fn out_type(&self, prog: &tac::Prog) -> DataType {
+    fn out_type(&self, prog: &stac::Prog) -> DataType {
         let returns = self.func.out_type(prog).into_function().unwrap().1;
         if returns.len() == 1 {
             return returns[0].clone();
@@ -38,9 +37,7 @@ impl Expr for FuncCall {
 }
 
 impl Stmt for FuncCall {
-    fn emit(mut self: Box<Self>, prog: &mut tac::Prog) {
-        self.func.emit(prog);
-
+    fn emit(mut self: Box<Self>, prog: &mut stac::Prog) {
         // Evaluate all of the parameters
         for idx in 0..self.params.len() {
             let p = std::mem::replace(
@@ -55,7 +52,14 @@ impl Stmt for FuncCall {
         }
 
         // Call the function
-        prog.add_instr(tac::Instr::Call);
+        let returns_count = self.func.out_type(prog).into_function().unwrap().1.len();
+        self.func.emit(prog);
+        prog.add_instr(stac::Instr::Call);
+
+        // Discard the returns
+        for _ in 0..returns_count {
+            prog.add_instr(stac::Instr::Discard);
+        }
     }
 }
 
@@ -63,32 +67,37 @@ pub struct FuncImpl {
     pub id: Ident,
     pub body: Box<dyn Stmt>,
 
-    pub params: Vec<DataType>,
+    pub params: Vec<Ident>,
     pub returns: Vec<DataType>,
 }
 
 impl Stmt for FuncImpl {
-    fn emit(self: Box<Self>, prog: &mut tac::Prog) {
+    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
         // Assign this function to the variable where it is stored
-        prog.add_instr(tac::Instr::LoadConst {
-            v: tac::DataVal::Function(prog.next_label().next().next().next()),
+        prog.add_instr(stac::Instr::LoadConst {
+            v: stac::DataVal::Function(prog.next_label().next().next().next()),
             // load, store, goto
             // next, next, next
         });
-        prog.add_instr(tac::Instr::StoreIdent { i: self.id.addr });
+        prog.add_instr(stac::Instr::StoreIdent { i: self.id.addr });
 
         // Goto after the function definition
         let goto = prog.add_temp_instr();
+
+        // Load the parameters into their assigned variables
+        for param in self.params.iter().rev() {
+            prog.add_instr(stac::Instr::StoreIdent { i: param.addr });
+        }
 
         // Emit the body
         self.body.emit(prog);
 
         // just in case the function doesn't have a final return
-        prog.add_instr(tac::Instr::Return {});
+        prog.add_instr(stac::Instr::Return {});
 
         prog.mod_instr(
             goto,
-            tac::Instr::Goto {
+            stac::Instr::Goto {
                 label: prog.next_label(),
             },
         )
@@ -100,7 +109,7 @@ pub struct Return {
 }
 
 impl Stmt for Return {
-    fn emit(mut self: Box<Self>, prog: &mut tac::Prog) {
+    fn emit(mut self: Box<Self>, prog: &mut stac::Prog) {
         // Evaluate each item, leaving it on the stack
         for idx in 0..self.values.len() {
             // In order to emit it, we need to own the value, which means
@@ -116,6 +125,6 @@ impl Stmt for Return {
             v.emit(prog);
         }
 
-        prog.add_instr(tac::Instr::Return);
+        prog.add_instr(stac::Instr::Return);
     }
 }

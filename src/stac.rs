@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use enum_as_inner::EnumAsInner;
 
 use crate::lexer::{self, Token};
-use crate::tac;
+use crate::stac;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Addr(pub usize); // Addr of variable in memory
@@ -57,7 +57,7 @@ pub enum Instr {
     },
 
     LoadConst {
-        v: tac::DataVal,
+        v: stac::DataVal,
     },
 
     LoadIdent {
@@ -74,7 +74,7 @@ pub enum Instr {
         if_false: Label,
     },
 
-    Discard, // discrads an element from the eval_stack
+    Discard, // discards an element from the eval_stack
 
     CompoundGet,    // arr, index
     CompoundSet,    // arr, index, value
@@ -83,8 +83,8 @@ pub enum Instr {
     Goto {
         label: Label, // so far no need for a dynamic goto
     },
-    Call,   // Sets the return address on the call stack, then does a goto to the function
-    Return, // Pop the previous item on the callstack and goto it.
+    Call,   // Adds the return label to the call stack, then does a goto to the function
+    Return, // Pop the previous label on the callstack and goto it
 }
 
 macro_rules! arith {

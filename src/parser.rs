@@ -4,7 +4,7 @@ use crate::{
     ast::{self, NullStmt},
     lexer::{Lexer, Token},
     scope,
-    tac::{self, DataType},
+    stac::{self, DataType},
 };
 
 pub struct Parser {
@@ -12,14 +12,14 @@ pub struct Parser {
     lookahead: Token,
 
     cur_scope: scope::Scope,
-    prog: tac::Prog,
+    prog: stac::Prog,
 }
 
 impl Parser {
     pub fn new(lexer: Lexer) -> Parser {
         let mut p = Parser {
             lexer,
-            prog: tac::Prog::new(),
+            prog: stac::Prog::new(),
             cur_scope: scope::Scope::new(None),
             lookahead: Token::C(' '),
         };
@@ -42,7 +42,7 @@ impl Parser {
         self.lookahead = self.lexer.scan();
     }
 
-    pub fn program(&mut self) -> &mut tac::Prog {
+    pub fn program(&mut self) -> &mut stac::Prog {
         let s = self.stmts();
         s.emit(&mut self.prog);
 
@@ -167,8 +167,8 @@ impl Parser {
                 return Box::new(ast::func::FuncImpl {
                     id: name_ident,
                     body,
-                    params: params_types,
-                    returns: returns,
+                    params,
+                    returns,
                 });
             }
             Token::Return => {
@@ -201,7 +201,7 @@ impl Parser {
 
                 self.prog
                     .user_structs
-                    .insert(name.into_word().unwrap(), tac::Struct { types, names });
+                    .insert(name.into_word().unwrap(), stac::Struct { types, names });
 
                 return Box::new(ast::NullStmt {});
             }
@@ -492,32 +492,32 @@ impl Parser {
             }
             Token::Integer(i) => {
                 let x = Box::new(ast::Const {
-                    value: tac::DataVal::Integer(i),
-                    data_type: tac::DataType::Integer,
+                    value: stac::DataVal::Integer(i),
+                    data_type: stac::DataType::Integer,
                 });
                 self.next_tok();
                 return x;
             }
             Token::Float(f) => {
                 let x = Box::new(ast::Const {
-                    value: tac::DataVal::Float(f),
-                    data_type: tac::DataType::Float,
+                    value: stac::DataVal::Float(f),
+                    data_type: stac::DataType::Float,
                 });
                 self.next_tok();
                 return x;
             }
             Token::True => {
                 let x = Box::new(ast::Const {
-                    value: tac::DataVal::Bool(true),
-                    data_type: tac::DataType::Bool,
+                    value: stac::DataVal::Bool(true),
+                    data_type: stac::DataType::Bool,
                 });
                 self.next_tok();
                 return x;
             }
             Token::False => {
                 let x = Box::new(ast::Const {
-                    value: tac::DataVal::Bool(false),
-                    data_type: tac::DataType::Bool,
+                    value: stac::DataVal::Bool(false),
+                    data_type: stac::DataType::Bool,
                 });
                 self.next_tok();
                 return x;

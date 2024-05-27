@@ -2,7 +2,7 @@ pub mod ast;
 pub mod lexer;
 pub mod parser;
 pub mod scope;
-pub mod tac;
+pub mod stac;
 
 #[cfg(test)]
 mod tests {
@@ -91,8 +91,8 @@ mod tests {
         prog.execute();
         println!("{:?}", prog.variables);
 
-        assert_eq!(prog.variables[0], tac::DataVal::Integer(233));
-        assert_eq!(prog.variables[1], tac::DataVal::Integer(144));
+        assert_eq!(prog.variables[0], stac::DataVal::Integer(233));
+        assert_eq!(prog.variables[1], stac::DataVal::Integer(144));
     }
 
     #[test]
@@ -118,11 +118,11 @@ mod tests {
         prog.execute();
         println!("{:?}", prog.variables);
 
-        assert_eq!(prog.variables[0], tac::DataVal::Integer(5));
-        assert_eq!(prog.variables[1], tac::DataVal::Integer(6));
-        assert_eq!(prog.variables[2], tac::DataVal::Integer(7));
-        assert_eq!(prog.variables[3], tac::DataVal::Float(6.0));
-        assert_eq!(prog.variables[4], tac::DataVal::Integer(5));
+        assert_eq!(prog.variables[0], stac::DataVal::Integer(5));
+        assert_eq!(prog.variables[1], stac::DataVal::Integer(6));
+        assert_eq!(prog.variables[2], stac::DataVal::Integer(7));
+        assert_eq!(prog.variables[3], stac::DataVal::Float(6.0));
+        assert_eq!(prog.variables[4], stac::DataVal::Integer(5));
     }
 
     #[test]
@@ -135,12 +135,26 @@ mod tests {
     }
 
     p := rand();
+    rand();
 
     func test() () {
         idk := 5;
     }
 
-    test();"
+    test();
+    
+    func huh(test: int) (int) {
+        test = test + 1;
+        return test;
+    }
+    
+    q := huh(6);
+    
+    func sub(a: int, b: int) (int) {
+        return a-b;
+    }
+    
+    r := sub(9, 10);"
                 .chars()
                 .collect(),
         );
@@ -152,9 +166,11 @@ mod tests {
         prog.execute();
         println!("{:?}", prog.variables);
 
-        assert_eq!(prog.variables[0], tac::DataVal::Integer(4));
-        assert_eq!(prog.variables[2], tac::DataVal::Integer(4));
-        assert_eq!(prog.variables[3], tac::DataVal::Integer(5));
+        assert_eq!(prog.variables[0], stac::DataVal::Integer(4));
+        assert_eq!(prog.variables[2], stac::DataVal::Integer(4));
+        assert_eq!(prog.variables[3], stac::DataVal::Integer(5));
+        assert_eq!(prog.variables[5], stac::DataVal::Integer(7));
+        assert_eq!(prog.variables[11], stac::DataVal::Integer(-1));
     }
 
     #[test]
@@ -176,7 +192,7 @@ mod tests {
         prog.execute();
         println!("{:?}", prog.variables);
 
-        assert_eq!(prog.variables[0], tac::DataVal::Integer(1))
+        assert_eq!(prog.variables[0], stac::DataVal::Integer(1))
     }
 
     #[test]
@@ -205,7 +221,7 @@ mod tests {
         prog.execute();
         println!("{:?}", prog.variables);
 
-        assert_eq!(prog.variables[1], tac::DataVal::Integer(5));
-        assert_eq!(prog.variables[2], tac::DataVal::Float(6.));
+        assert_eq!(prog.variables[1], stac::DataVal::Integer(5));
+        assert_eq!(prog.variables[2], stac::DataVal::Float(6.));
     }
 }
