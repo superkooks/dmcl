@@ -490,6 +490,14 @@ impl Parser {
 
                 return Box::new(ast::compound::ArrayLiteral { values: array });
             }
+            Token::String(s) => {
+                // String literal
+                self.next_tok();
+                return Box::new(ast::Const {
+                    value: stac::DataVal::String(s),
+                    data_type: DataType::String,
+                });
+            }
             Token::Integer(i) => {
                 let x = Box::new(ast::Const {
                     value: stac::DataVal::Integer(i),

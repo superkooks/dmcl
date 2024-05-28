@@ -39,9 +39,19 @@ pub struct Arith {
 
 impl Expr for Arith {
     fn emit(self: Box<Self>, prog: &mut stac::Prog) {
+        let x_type = self.x.out_type(prog);
+
         self.y.emit(prog);
         self.x.emit(prog);
-        prog.add_instr(stac::Instr::BinaryExpr { op: self.op });
+
+        match x_type {
+            DataType::String => {
+                prog.add_instr(stac::Instr::Concat);
+            }
+            _ => {
+                prog.add_instr(stac::Instr::BinaryExpr { op: self.op });
+            }
+        }
     }
 
     fn out_type(&self, prog: &stac::Prog) -> DataType {

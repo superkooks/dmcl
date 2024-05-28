@@ -13,14 +13,17 @@ mod tests {
     #[test]
     fn lexing() {
         let mut l = lexer::Lexer::new(
-            "
+            r#"
     p := 0;
     q := 1;
     while p < 200 {
         t := p + q;
         q = p;
         p = t;
-    }"
+    }
+    
+    "hello world"
+    "#
             .chars()
             .collect(),
         );
@@ -64,7 +67,8 @@ mod tests {
                 Token::C('='),
                 Token::Word("t".into()),
                 Token::C(';'),
-                Token::C('}')
+                Token::C('}'),
+                Token::String("hello world".into()),
             ]
         )
     }
@@ -72,14 +76,17 @@ mod tests {
     #[test]
     fn parsing() {
         let l = lexer::Lexer::new(
-            "
+            r#"
     p := 0;
     q := 1;
     while p < 200 {
         t := p + q;
         q = p;
         p = t;
-    }"
+    }
+    
+    k := "hello" + "world";
+"#
             .chars()
             .collect(),
         );
@@ -93,6 +100,10 @@ mod tests {
 
         assert_eq!(prog.variables[0], stac::DataVal::Integer(233));
         assert_eq!(prog.variables[1], stac::DataVal::Integer(144));
+        assert_eq!(
+            prog.variables[3],
+            stac::DataVal::String("helloworld".into())
+        );
     }
 
     #[test]
