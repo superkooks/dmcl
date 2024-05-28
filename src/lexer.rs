@@ -20,6 +20,7 @@ pub enum Token {
     Integer(i64),
     Float(f64),
     Word(String),
+    String(String), // a string literal
     Type(stac::DataType),
 
     If,
@@ -61,6 +62,7 @@ impl Lexer {
         wt.insert("int".to_string(), Token::Type(stac::DataType::Integer));
         wt.insert("float".to_string(), Token::Type(stac::DataType::Float));
         wt.insert("bool".to_string(), Token::Type(stac::DataType::Bool));
+        wt.insert("string".to_string(), Token::Type(stac::DataType::String));
         wt.insert("func".to_string(), Token::Func);
         wt.insert("return".to_string(), Token::Return);
         wt.insert("struct".to_string(), Token::Struct);
@@ -150,6 +152,21 @@ impl Lexer {
                     return Token::DeclAssign;
                 } else {
                     return Token::C(':');
+                }
+            }
+            '"' => {
+                self.read_char();
+                let mut collected = String::new();
+                loop {
+                    if self.peek == '"' {
+                        self.read_char();
+                        return Token::String(collected);
+                    } else if self.peek == '\0' {
+                        panic!("EOF found before end of string")
+                    }
+
+                    collected.push(self.peek);
+                    self.read_char();
                 }
             }
             '\x00' => {

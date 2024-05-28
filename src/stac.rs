@@ -29,6 +29,7 @@ pub enum DataType {
     Integer,
     Float,
     Bool,
+    String,
     Array(Box<DataType>),
     Struct(String), // the name of struct
     Function {
@@ -42,6 +43,7 @@ pub enum DataVal {
     Integer(i64),
     Float(f64),
     Bool(bool),
+    String(String),
     Compound(Vec<DataVal>),
     Function(Label),
 }
@@ -51,7 +53,7 @@ pub enum Instr {
     BinaryExpr {
         op: lexer::Token,
     },
-
+    Concat,
     UnaryExpr {
         op: lexer::Token,
     },
@@ -192,6 +194,12 @@ impl Prog {
                     Token::Ge => rel!(self, std::cmp::PartialOrd::ge),
                     _ => panic!("unimplemented operator for binary expression"),
                 },
+                Instr::Concat => {
+                    let mut x = self.eval_stack.pop().unwrap().into_string().unwrap();
+                    let y = self.eval_stack.pop().unwrap().into_string().unwrap();
+                    x.push_str(&y);
+                    self.eval_stack.push(DataVal::String(x));
+                }
                 Instr::UnaryExpr { op } => match op {
                     Token::C('-') => {
                         let top = self.eval_stack.pop().unwrap();
@@ -214,11 +222,11 @@ impl Prog {
                     DataVal::Bool(b) => {
                         if b {
                             if if_true != Label::CONTINUE {
-                                self.ip = if_true.0;
+                                self.ip = if_true.0 - 1;
                             }
                         } else {
                             if if_false != Label::CONTINUE {
-                                self.ip = if_false.0;
+                                self.ip = if_false.0 - 1;
                             }
                         }
                     }
