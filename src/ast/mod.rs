@@ -123,6 +123,9 @@ impl Expr for BoolOr {
             v: DataVal::Bool(true),
         });
 
+        prog.add_instr(stac::Instr::IfEnd { start: if2 });
+        prog.add_instr(stac::Instr::IfEnd { start: if1 });
+
         // Change the labels of the if/goto statements
         prog.mod_instr(
             if1,
@@ -178,6 +181,9 @@ impl Expr for BoolAnd {
             v: DataVal::Bool(false),
         });
 
+        prog.add_instr(stac::Instr::IfEnd { start: if2 });
+        prog.add_instr(stac::Instr::IfEnd { start: if1 });
+
         // Change the labels of if/goto statements
         prog.mod_instr(
             if1,
@@ -211,38 +217,11 @@ pub struct BoolNot {
 }
 
 impl Expr for BoolNot {
-    // Implement not using jumps instead of a dedicated op in AssignExpr, i guess...
     fn emit(self: Box<Self>, prog: &mut stac::Prog) {
         self.x.emit(prog);
-
-        // Lazy evaluate the second operand
-        let if1 = prog.add_temp_instr();
-
-        // Create true and false branches
-        prog.add_instr(stac::Instr::LoadConst {
-            v: DataVal::Bool(false),
+        prog.add_instr(stac::Instr::UnaryExpr {
+            op: lexer::Token::C('!'),
         });
-
-        let goto = prog.add_temp_instr();
-
-        let f_branch = prog.add_instr(stac::Instr::LoadConst {
-            v: DataVal::Bool(true), // false branch returns true
-        });
-
-        // Change the labels of if/goto statements
-        prog.mod_instr(
-            if1,
-            stac::Instr::IfExpr {
-                if_true: stac::Label::CONTINUE,
-                if_false: f_branch,
-            },
-        );
-        prog.mod_instr(
-            goto,
-            stac::Instr::Goto {
-                label: f_branch.next(),
-            },
-        );
     }
 
     fn out_type(&self, _prog: &stac::Prog) -> DataType {
@@ -267,13 +246,14 @@ impl Stmt for If {
 
         // Execute the statement if true
         self.stmt.emit(prog);
+        let end = prog.add_instr(stac::Instr::IfEnd { start: if1 });
 
         // Point if to correct labels
         prog.mod_instr(
             if1,
             stac::Instr::IfExpr {
                 if_true: stac::Label::CONTINUE,
-                if_false: prog.next_label(),
+                if_false: end,
             },
         )
     }
@@ -298,6 +278,8 @@ impl Stmt for IfElse {
 
         self.stmt_f.emit(prog);
 
+        let end = prog.add_instr(stac::Instr::IfEnd { start: if1 });
+
         // Point if/goto to correct labels
         prog.mod_instr(
             if1,
@@ -306,12 +288,7 @@ impl Stmt for IfElse {
                 if_false: goto.next(),
             },
         );
-        prog.mod_instr(
-            goto,
-            stac::Instr::Goto {
-                label: prog.next_label(),
-            },
-        )
+        prog.mod_instr(goto, stac::Instr::Goto { label: end })
     }
 }
 
@@ -327,17 +304,18 @@ impl Stmt for While {
         self.expr.emit(prog);
         let if1 = prog.add_temp_instr();
         self.stmt.emit(prog);
-        let goto = prog.add_temp_instr();
+        prog.add_instr(stac::Instr::Goto { label: expr_label });
+
+        let end = prog.add_instr(stac::Instr::IfEnd { start: if1 });
 
         // Modify labels of instrs
         prog.mod_instr(
             if1,
             stac::Instr::IfExpr {
                 if_true: stac::Label::CONTINUE,
-                if_false: prog.next_label(),
+                if_false: end,
             },
         );
-        prog.mod_instr(goto, stac::Instr::Goto { label: expr_label });
     }
 }
 

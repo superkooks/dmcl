@@ -6,6 +6,8 @@ pub mod stac;
 
 #[cfg(test)]
 mod tests {
+    use stac::DataVal;
+
     use self::lexer::Token;
 
     use super::*;
@@ -85,10 +87,9 @@ mod tests {
         p = t;
     }
     
-    k := "hello" + "world";
-"#
-            .chars()
-            .collect(),
+    k := "hello" + "world";"#
+                .chars()
+                .collect(),
         );
 
         let mut par = parser::Parser::new(l);
@@ -234,5 +235,72 @@ mod tests {
 
         assert_eq!(prog.variables[1], stac::DataVal::Integer(5));
         assert_eq!(prog.variables[2], stac::DataVal::Float(6.));
+    }
+
+    #[test]
+    fn extern_func() {
+        let l = lexer::Lexer::new(
+            r#"
+    func extern createResource(name: string) (int)
+    func extern createResourceAsync(name: string) (int)
+
+    p := createResource("test");
+    q := createResourceAsync("test3");
+
+    func test() (int) {
+        p := 1;
+        if p == 1 {
+            p = 2;
+        }
+        return p;
+    }
+
+    a := 1;
+    if q < 1 {
+        a = 2;
+    } else {
+        a = 3;
+    }
+
+    b := test();
+    c := 1;
+    if q < 1 {
+        c = test();
+    }
+    "#
+            .chars()
+            .collect(),
+        );
+
+        let mut par = parser::Parser::new(l);
+        let prog = par.program();
+        println!("{:?}", prog.code);
+
+        prog.external_functions
+            .insert("createResource".into(), |params| {
+                println!(
+                    "creating resource {}",
+                    params[0].clone().into_string().unwrap()
+                );
+                return vec![DataVal::Integer(6)];
+            });
+
+        prog.external_functions
+            .insert("createResourceAsync".into(), |params| {
+                println!(
+                    "creating resource asynchronously {}",
+                    params[0].clone().into_string().unwrap()
+                );
+                return vec![DataVal::Waiting];
+            });
+
+        prog.execute();
+        println!("{:?}", prog.variables);
+
+        assert_eq!(prog.variables[2], stac::DataVal::Integer(6));
+        assert_eq!(prog.variables[3], stac::DataVal::Waiting);
+        assert_eq!(prog.variables[4], stac::DataVal::Waiting);
+        assert_eq!(prog.variables[7], stac::DataVal::Integer(2));
+        assert_eq!(prog.variables[8], stac::DataVal::Waiting);
     }
 }

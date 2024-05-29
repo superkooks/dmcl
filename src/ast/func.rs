@@ -104,6 +104,46 @@ impl Stmt for FuncImpl {
     }
 }
 
+pub struct ExternFuncImpl {
+    pub id: Ident,
+    pub params_count: usize,
+}
+
+impl Stmt for ExternFuncImpl {
+    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
+        // Assign this function to the variable where it is stored
+        prog.add_instr(stac::Instr::LoadConst {
+            v: stac::DataVal::Function(prog.next_label().next().next().next()),
+            // load, store, goto
+            // next, next, next
+        });
+        prog.add_instr(stac::Instr::StoreIdent { i: self.id.addr });
+
+        // Goto after the function definition
+        let goto = prog.add_temp_instr();
+
+        // Add the name of this function to the eval stack
+        prog.add_instr(stac::Instr::LoadConst {
+            v: DataVal::String(self.id.name.into_word().unwrap()),
+        });
+
+        // Make the extern call
+        prog.add_instr(stac::Instr::ExternCall {
+            params_count: self.params_count,
+        });
+
+        // Return
+        prog.add_instr(stac::Instr::Return {});
+
+        prog.mod_instr(
+            goto,
+            stac::Instr::Goto {
+                label: prog.next_label(),
+            },
+        )
+    }
+}
+
 pub struct Return {
     pub values: Vec<Box<dyn Expr>>,
 }

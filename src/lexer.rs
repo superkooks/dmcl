@@ -31,6 +31,7 @@ pub enum Token {
     Func,
     Return,
     Struct,
+    Extern,
 
     DeclAssign,
     BoolOr,
@@ -65,6 +66,7 @@ impl Lexer {
         wt.insert("string".to_string(), Token::Type(stac::DataType::String));
         wt.insert("func".to_string(), Token::Func);
         wt.insert("return".to_string(), Token::Return);
+        wt.insert("extern".to_string(), Token::Extern);
         wt.insert("struct".to_string(), Token::Struct);
 
         let mut l = Lexer {
