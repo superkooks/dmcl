@@ -36,6 +36,7 @@ pub enum DataType {
         params: Vec<DataType>,
         returns: Vec<DataType>,
     },
+    Waiting, // this value is waiting on an external resource to be created
 }
 
 #[derive(Clone, Debug, PartialEq, EnumAsInner)]
@@ -46,6 +47,7 @@ pub enum DataVal {
     String(String),
     Compound(Vec<DataVal>),
     Function(Label),
+    Waiting,
 }
 
 #[derive(Debug, Clone)]
@@ -75,6 +77,11 @@ pub enum Instr {
         if_true: Label,
         if_false: Label,
     },
+    IfEnd {
+        // Marks the end of a control flow statement including an if statement.
+        // Used when evaluating the side effects of such a statement.
+        start: Label,
+    },
 
     Discard, // discards an element from the eval_stack
 
@@ -87,22 +94,30 @@ pub enum Instr {
     },
     Call,   // Adds the return label to the call stack, then does a goto to the function
     Return, // Pop the previous label on the callstack and goto it
+
+    ExternCall {
+        params_count: usize,
+    },
 }
 
 macro_rules! arith {
     ($self:ident, $op:expr) => {{
         let x = $self.eval_stack.pop().unwrap();
         let y = $self.eval_stack.pop().unwrap();
-        match x {
-            DataVal::Integer(_) => $self.eval_stack.push(DataVal::Integer($op(
-                x.into_integer().unwrap(),
-                y.into_integer().unwrap(),
-            ))),
-            DataVal::Float(_) => $self.eval_stack.push(DataVal::Float($op(
-                x.into_float().unwrap(),
-                y.into_float().unwrap(),
-            ))),
-            _ => panic!("cannot use arithmetic on those types"),
+        if (x.is_waiting() || y.is_waiting()) {
+            $self.eval_stack.push(DataVal::Waiting);
+        } else {
+            match x {
+                DataVal::Integer(_) => $self.eval_stack.push(DataVal::Integer($op(
+                    x.into_integer().unwrap(),
+                    y.into_integer().unwrap(),
+                ))),
+                DataVal::Float(_) => $self.eval_stack.push(DataVal::Float($op(
+                    x.into_float().unwrap(),
+                    y.into_float().unwrap(),
+                ))),
+                _ => panic!("cannot use arithmetic on those types"),
+            }
         }
     }};
 }
@@ -111,16 +126,20 @@ macro_rules! rel {
     ($self:ident, $op:expr) => {{
         let x = $self.eval_stack.pop().unwrap();
         let y = $self.eval_stack.pop().unwrap();
-        match x {
-            DataVal::Integer(_) => $self.eval_stack.push(DataVal::Bool($op(
-                &x.into_integer().unwrap(),
-                &y.into_integer().unwrap(),
-            ))),
-            DataVal::Float(_) => $self.eval_stack.push(DataVal::Bool($op(
-                &x.into_float().unwrap(),
-                &y.into_float().unwrap(),
-            ))),
-            _ => panic!("cannot compare those types"),
+        if (x.is_waiting() || y.is_waiting()) {
+            $self.eval_stack.push(DataVal::Waiting);
+        } else {
+            match x {
+                DataVal::Integer(_) => $self.eval_stack.push(DataVal::Bool($op(
+                    &x.into_integer().unwrap(),
+                    &y.into_integer().unwrap(),
+                ))),
+                DataVal::Float(_) => $self.eval_stack.push(DataVal::Bool($op(
+                    &x.into_float().unwrap(),
+                    &y.into_float().unwrap(),
+                ))),
+                _ => panic!("cannot compare those types"),
+            }
         }
     }};
 }
@@ -135,6 +154,11 @@ pub struct Prog {
 
     ip: usize, // instruction pointer
     call_stack: Vec<usize>,
+
+    evaluating_side_effects: bool,
+    if_marker: Option<Label>,
+    false_path: Option<Label>,
+    pub external_functions: HashMap<String, fn(Vec<DataVal>) -> Vec<DataVal>>,
 }
 
 impl Prog {
@@ -146,6 +170,10 @@ impl Prog {
             ip: 0,
             call_stack: Vec::new(),
             user_structs: HashMap::new(),
+            evaluating_side_effects: false,
+            if_marker: None,
+            false_path: None,
+            external_functions: HashMap::new(),
         }
     }
 
@@ -210,14 +238,30 @@ impl Prog {
                             DataVal::Float(f) => {
                                 self.eval_stack.push(DataVal::Float(-f));
                             }
-                            _ => panic!("operator unimplemented for data type"),
+                            DataVal::Waiting => self.eval_stack.push(DataVal::Waiting),
+                            _ => panic!("'{op}' operator unimplemented for data type"),
                         }
                     }
-                    _ => panic!("unimplemented operator for unary expression"),
+                    Token::C('!') => {
+                        let top = self.eval_stack.pop().unwrap();
+                        match top {
+                            DataVal::Bool(b) => {
+                                self.eval_stack.push(DataVal::Bool(!b));
+                            }
+                            _ => panic!("'{op}' operator unimplemented for data type"),
+                        }
+                    }
+                    _ => panic!("unimplemented operator '{op}' for unary expression"),
                 },
                 Instr::LoadConst { v } => self.eval_stack.push(v),
                 Instr::LoadIdent { i } => self.eval_stack.push(self.variables[i.0].clone()),
-                Instr::StoreIdent { i } => self.variables[i.0] = self.eval_stack.pop().unwrap(),
+                Instr::StoreIdent { i } => {
+                    if self.evaluating_side_effects {
+                        self.variables[i.0] = DataVal::Waiting;
+                    } else {
+                        self.variables[i.0] = self.eval_stack.pop().unwrap()
+                    }
+                }
                 Instr::IfExpr { if_true, if_false } => match self.eval_stack.pop().unwrap() {
                     DataVal::Bool(b) => {
                         if b {
@@ -230,26 +274,71 @@ impl Prog {
                             }
                         }
                     }
+                    DataVal::Waiting => {
+                        // Evaluate side effects of the both paths
+                        self.evaluating_side_effects = true;
+                        self.if_marker = Some(Label(self.ip));
+                        self.false_path = Some(if_false);
+
+                        if if_true != Label::CONTINUE {
+                            self.ip = if_true.0;
+                        }
+                    }
                     _ => panic!("can only if on bool"),
                 },
+                Instr::IfEnd { start } => match self.if_marker {
+                    Some(im) => {
+                        if im == start {
+                            match self.false_path {
+                                Some(fp) => {
+                                    if fp == Label::CONTINUE {
+                                        self.ip = start.0;
+                                    } else {
+                                        self.ip = fp.0;
+                                    }
+                                    self.false_path = None;
+                                }
+                                None => {
+                                    self.evaluating_side_effects = false;
+                                }
+                            }
+                        }
+                    }
+                    None => {}
+                },
                 Instr::CompoundGet => {
-                    let index = self.eval_stack.pop().unwrap().into_integer().unwrap();
-                    let arr = self.eval_stack.pop().unwrap().into_compound().unwrap();
-                    let val = arr[index as usize].clone();
-                    self.eval_stack.push(val);
+                    let index = self.eval_stack.pop().unwrap();
+                    let arr = self.eval_stack.pop().unwrap();
+                    if index.is_waiting() || arr.is_waiting() {
+                        self.eval_stack.push(DataVal::Waiting);
+                    } else {
+                        let val = arr.into_compound().unwrap()
+                            [index.into_integer().unwrap() as usize]
+                            .clone();
+                        self.eval_stack.push(val);
+                    }
                 }
                 Instr::CompoundSet => {
                     let val = self.eval_stack.pop().unwrap();
-                    let index = self.eval_stack.pop().unwrap().into_integer().unwrap();
-                    let mut arr = self.eval_stack.pop().unwrap().into_compound().unwrap();
+                    let index = self.eval_stack.pop().unwrap();
+                    let arr = self.eval_stack.pop().unwrap();
 
-                    arr[index as usize] = val;
-                    self.eval_stack.push(DataVal::Compound(arr));
+                    if index.is_waiting() || arr.is_waiting() {
+                        self.eval_stack.push(DataVal::Waiting);
+                    } else {
+                        let mut a = arr.into_compound().unwrap();
+                        a[index.into_integer().unwrap() as usize] = val;
+                        self.eval_stack.push(DataVal::Compound(a));
+                    }
                 }
                 Instr::CompoundCreate => {
-                    let len = self.eval_stack.pop().unwrap().into_integer().unwrap();
-                    let arr = vec![DataVal::Bool(false); len as usize];
-                    self.eval_stack.push(DataVal::Compound(arr));
+                    let len = self.eval_stack.pop().unwrap();
+                    if len.is_waiting() {
+                        self.eval_stack.push(DataVal::Waiting);
+                    } else {
+                        let arr = vec![DataVal::Bool(false); len.into_integer().unwrap() as usize];
+                        self.eval_stack.push(DataVal::Compound(arr));
+                    }
                 }
                 Instr::Goto { label } => {
                     self.ip = label.0 - 1;
@@ -270,6 +359,20 @@ impl Prog {
                 },
                 Instr::Discard => {
                     self.eval_stack.pop();
+                }
+                Instr::ExternCall { params_count } => {
+                    let func_name = self.eval_stack.pop().unwrap().into_string().unwrap();
+
+                    let params = self
+                        .eval_stack
+                        .split_off(self.eval_stack.len() - params_count);
+
+                    let mut returns =
+                        self.external_functions
+                            .get(&func_name)
+                            .expect("unknown external function")(params);
+
+                    self.eval_stack.append(&mut returns);
                 }
             };
             self.ip += 1;

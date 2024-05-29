@@ -113,63 +113,105 @@ impl Parser {
             Token::Func => {
                 self.next_tok();
 
-                let name = self.lookahead.clone();
-                self.next_tok();
+                match self.lookahead {
+                    Token::Extern => {
+                        // Extern function
+                        self.next_tok();
 
-                // Create new scope from previous
-                self.cur_scope = scope::Scope::new(Some(Box::new(std::mem::replace(
-                    &mut self.cur_scope,
-                    scope::Scope::new(None),
-                ))));
+                        let name = self.lookahead.clone();
+                        self.next_tok();
 
-                // Parse the function signature
-                self.match_tok(Token::C('('));
-                let params: Vec<ast::Ident> = self
-                    .decl_list(Token::C(')'))
-                    .iter()
-                    .map(|p| {
-                        let ident = ast::Ident {
-                            name: p.0.clone(),
-                            data_type: p.1.clone(),
+                        self.match_tok(Token::C('('));
+                        let params: Vec<stac::DataType> = self
+                            .decl_list(Token::C(')'))
+                            .iter()
+                            .map(|p| {
+                                return p.1.clone();
+                            })
+                            .collect();
+                        self.match_tok(Token::C(')'));
+
+                        let returns = self.type_list();
+
+                        // Assign the func to the name
+                        let name_ident = ast::Ident {
+                            name: name.clone(),
+                            data_type: DataType::Function {
+                                params: params.clone(),
+                                returns: returns.clone(),
+                            },
                             addr: self.prog.allocate_var(),
                         };
-                        self.cur_scope.put(p.0.clone(), ident.clone());
-                        return ident;
-                    })
-                    .collect();
-                self.match_tok(Token::C(')'));
+                        self.cur_scope.put(name, name_ident.clone());
 
-                let returns = self.type_list();
+                        return Box::new(ast::func::ExternFuncImpl {
+                            id: name_ident,
+                            params_count: params.len(),
+                        });
+                    }
+                    _ => {
+                        // Regular function
 
-                // Parse the function body
-                let body = self.block();
+                        let name = self.lookahead.clone();
+                        self.next_tok();
 
-                // Create the data type for the function
-                let params_types: Vec<DataType> =
-                    params.iter().map(|p| p.data_type.clone()).collect();
+                        // Create new scope from previous
+                        self.cur_scope = scope::Scope::new(Some(Box::new(std::mem::replace(
+                            &mut self.cur_scope,
+                            scope::Scope::new(None),
+                        ))));
 
-                // Assign the func to the name
-                let name_ident = ast::Ident {
-                    name: name.clone(),
-                    data_type: DataType::Function {
-                        params: params_types.clone(),
-                        returns: returns.clone(),
-                    },
-                    addr: self.prog.allocate_var(),
-                };
+                        // Parse the function signature
+                        self.match_tok(Token::C('('));
+                        let params: Vec<ast::Ident> = self
+                            .decl_list(Token::C(')'))
+                            .iter()
+                            .map(|p| {
+                                let ident = ast::Ident {
+                                    name: p.0.clone(),
+                                    data_type: p.1.clone(),
+                                    addr: self.prog.allocate_var(),
+                                };
+                                self.cur_scope.put(p.0.clone(), ident.clone());
+                                return ident;
+                            })
+                            .collect();
+                        self.match_tok(Token::C(')'));
 
-                // pop the func scope
-                self.cur_scope =
-                    std::mem::replace(&mut self.cur_scope, scope::Scope::new(None)).take_prev();
-                self.cur_scope.put(name, name_ident.clone());
+                        let returns = self.type_list();
 
-                // Return the function
-                return Box::new(ast::func::FuncImpl {
-                    id: name_ident,
-                    body,
-                    params,
-                    returns,
-                });
+                        // Parse the function body
+                        let body = self.block();
+
+                        // Create the data type for the function
+                        let params_types: Vec<DataType> =
+                            params.iter().map(|p| p.data_type.clone()).collect();
+
+                        // Assign the func to the name
+                        let name_ident = ast::Ident {
+                            name: name.clone(),
+                            data_type: DataType::Function {
+                                params: params_types.clone(),
+                                returns: returns.clone(),
+                            },
+                            addr: self.prog.allocate_var(),
+                        };
+
+                        // pop the func scope
+                        self.cur_scope =
+                            std::mem::replace(&mut self.cur_scope, scope::Scope::new(None))
+                                .take_prev();
+                        self.cur_scope.put(name, name_ident.clone());
+
+                        // Return the function
+                        return Box::new(ast::func::FuncImpl {
+                            id: name_ident,
+                            body,
+                            params,
+                            returns,
+                        });
+                    }
+                }
             }
             Token::Return => {
                 self.next_tok();
