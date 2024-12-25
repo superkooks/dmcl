@@ -156,23 +156,23 @@ pub struct Prog {
     call_stack: Vec<usize>,
 
     evaluating_side_effects: bool,
-    if_marker: Option<Label>,
-    false_path: Option<Label>,
+    if_markers: Vec<Label>,
+    false_paths: Vec<Label>,
     pub external_functions: HashMap<String, fn(Vec<DataVal>) -> Vec<DataVal>>,
 }
 
 impl Prog {
     pub fn new() -> Prog {
         Prog {
-            code: Vec::new(),
-            eval_stack: Vec::new(),
-            variables: Vec::new(),
+            code: vec![],
+            eval_stack: vec![],
+            variables: vec![],
             ip: 0,
-            call_stack: Vec::new(),
+            call_stack: vec![],
             user_structs: HashMap::new(),
             evaluating_side_effects: false,
-            if_marker: None,
-            false_path: None,
+            if_markers: vec![],
+            false_paths: vec![],
             external_functions: HashMap::new(),
         }
     }
@@ -275,10 +275,11 @@ impl Prog {
                         }
                     }
                     DataVal::Waiting => {
+                        println!("if expr at {}", self.ip);
+
                         // Evaluate side effects of the both paths
                         self.evaluating_side_effects = true;
-                        self.if_marker = Some(Label(self.ip));
-                        self.false_path = Some(if_false);
+                        self.if_markers.push(Label(self.ip));
 
                         if if_true != Label::CONTINUE {
                             self.ip = if_true.0;
@@ -286,19 +287,26 @@ impl Prog {
                     }
                     _ => panic!("can only if on bool"),
                 },
-                Instr::IfEnd { start } => match self.if_marker {
+                Instr::IfEnd { start } => match self.if_markers.last() {
                     Some(im) => {
-                        if im == start {
-                            match self.false_path {
-                                Some(fp) => {
-                                    if fp == Label::CONTINUE {
-                                        self.ip = start.0;
-                                    } else {
-                                        self.ip = fp.0;
-                                    }
-                                    self.false_path = None;
+                        println!("if end at {} from {}", self.ip, start.0);
+                        if *im == start {
+                            println!(
+                                "matching {:?} and fp {:?}",
+                                self.if_markers.last().unwrap(),
+                                self.false_paths.last()
+                            );
+                            if self.false_paths.len() == self.if_markers.len() {
+                                let fp = self.false_paths.pop().unwrap();
+                                if fp == Label::CONTINUE {
+                                    self.ip = start.0 - 1;
+                                } else {
+                                    self.ip = fp.0 - 1;
                                 }
-                                None => {
+                            } else {
+                                self.if_markers.pop();
+
+                                if self.if_markers.len() == 0 {
                                     self.evaluating_side_effects = false;
                                 }
                             }

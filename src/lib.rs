@@ -1,3 +1,5 @@
+use stac::Instr;
+
 pub mod ast;
 pub mod lexer;
 pub mod parser;
@@ -94,7 +96,7 @@ mod tests {
 
         let mut par = parser::Parser::new(l);
         let prog = par.program();
-        println!("{:?}", prog.code);
+        print_instructions(&prog.code);
 
         prog.execute();
         println!("{:?}", prog.variables);
@@ -125,7 +127,7 @@ mod tests {
 
         let mut par = parser::Parser::new(l);
         let prog = par.program();
-        println!("{:?}", prog.code);
+        print_instructions(&prog.code);
 
         prog.execute();
         println!("{:?}", prog.variables);
@@ -173,7 +175,7 @@ mod tests {
 
         let mut par = parser::Parser::new(l);
         let prog = par.program();
-        println!("{:?}", prog.code);
+        print_instructions(&prog.code);
 
         prog.execute();
         println!("{:?}", prog.variables);
@@ -199,7 +201,7 @@ mod tests {
 
         let mut par = parser::Parser::new(l);
         let prog = par.program();
-        println!("{:?}", prog.code);
+        print_instructions(&prog.code);
 
         prog.execute();
         println!("{:?}", prog.variables);
@@ -228,7 +230,7 @@ mod tests {
 
         let mut par = parser::Parser::new(l);
         let prog = par.program();
-        println!("{:?}", prog.code);
+        print_instructions(&prog.code);
 
         prog.execute();
         println!("{:?}", prog.variables);
@@ -274,7 +276,7 @@ mod tests {
 
         let mut par = parser::Parser::new(l);
         let prog = par.program();
-        println!("{:?}", prog.code);
+        print_instructions(&prog.code);
 
         prog.external_functions
             .insert("createResource".into(), |params| {
@@ -302,5 +304,56 @@ mod tests {
         assert_eq!(prog.variables[4], stac::DataVal::Waiting);
         assert_eq!(prog.variables[7], stac::DataVal::Integer(2));
         assert_eq!(prog.variables[8], stac::DataVal::Waiting);
+    }
+
+    #[test]
+    fn extern_func2() {
+        let l = lexer::Lexer::new(
+            r#"
+    func extern createResourceAsync(name: string) (int)
+
+    q := createResourceAsync("test3");
+
+    a := 1;
+    if q == 0 {
+        if q == 0 {
+            a = 2;
+        }
+        a = 3;
+    }
+
+    b := 2;
+    while a == 1 {
+        b = 3;
+    }
+    "#
+            .chars()
+            .collect(),
+        );
+
+        let mut par = parser::Parser::new(l);
+        let prog = par.program();
+        print_instructions(&prog.code);
+
+        prog.external_functions
+            .insert("createResourceAsync".into(), |params| {
+                println!(
+                    "creating resource asynchronously {}",
+                    params[0].clone().into_string().unwrap()
+                );
+                return vec![DataVal::Waiting];
+            });
+
+        prog.execute();
+        println!("{:?}", prog.variables);
+
+        assert_eq!(prog.variables[1], stac::DataVal::Waiting);
+        assert_eq!(prog.variables[2], stac::DataVal::Waiting);
+    }
+}
+
+pub fn print_instructions(instrs: &Vec<Instr>) {
+    for (k, instr) in instrs.iter().enumerate() {
+        println!("{:3}:  {:?}", k, instr)
     }
 }
