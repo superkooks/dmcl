@@ -1,0 +1,51 @@
+import builtin.digitalocean as do
+import builtin.systemd
+import builtin.files
+import builtin.apt
+
+// Create droplets and load balancer
+droplets := []
+for i := 0; i < 3; i++ {
+	droplets.append(do.createDroplet({
+		name: "testing"+i,
+		region: "syd1"
+	}))
+}
+
+do.createLoadBalancer({
+	names: "testing-balancer"
+	droplets: droplets
+})
+
+// Create volume and attach to another droplet
+dataVol := do.createVolume({
+	name: "testVolume",
+	region: "syd1",
+
+	size: 20G
+})
+
+dbDroplet := do.createDroplet({
+	name: "testing3",
+	region: "syd1",
+	volumes: [dataVol]
+})
+
+// Configure droplet as database server
+on ssh(dbDroplet.ip) {
+	apt.package({
+		name: "postgresql",
+		state: apt.PRESENT
+	})
+
+	files.file({
+		path: "/etc/postgres/conf"
+		content: "data-dir: "+dataVol.mount_point
+	})
+
+	systemd.unit({
+		name: "postgresql.service"
+		enabled: true,
+		state: systemd.RESTART
+	})
+}
