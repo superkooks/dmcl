@@ -3,11 +3,11 @@ use crate::{ast::Const, ast::Expr, ast::Ident, ast::Stmt, stac, stac::DataType, 
 // A func call can be used as an expression when it only returns one variable
 pub struct FuncCall {
     pub params: Vec<Box<dyn Expr>>,
-    pub func: Box<dyn Expr>,
+    pub func: String,
 }
 
 impl Expr for FuncCall {
-    fn emit(mut self: Box<Self>, prog: &mut stac::Prog) {
+    fn emit(mut self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block) {
         // Evaluate all of the parameters
         for idx in 0..self.params.len() {
             let p = std::mem::replace(
@@ -18,16 +18,17 @@ impl Expr for FuncCall {
                 }),
             );
 
-            p.emit(prog);
+            p.emit(prog, block);
         }
 
         // Call the function
-        self.func.emit(prog);
-        prog.add_instr(stac::Instr::Call);
+        block.add_instr(stac::Instr::Call {
+            label: prog.user_functions.get(&self.func).unwrap().label,
+        });
     }
 
     fn out_type(&self, prog: &stac::Prog) -> DataType {
-        let returns = self.func.out_type(prog).into_function().unwrap().1;
+        let returns = &prog.user_functions.get(&self.func).unwrap().returns;
         if returns.len() == 1 {
             return returns[0].clone();
         } else {
@@ -37,7 +38,7 @@ impl Expr for FuncCall {
 }
 
 impl Stmt for FuncCall {
-    fn emit(mut self: Box<Self>, prog: &mut stac::Prog) {
+    fn emit(mut self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block) {
         // Evaluate all of the parameters
         for idx in 0..self.params.len() {
             let p = std::mem::replace(
@@ -48,99 +49,73 @@ impl Stmt for FuncCall {
                 }),
             );
 
-            p.emit(prog);
+            p.emit(prog, block);
         }
 
         // Call the function
-        let returns_count = self.func.out_type(prog).into_function().unwrap().1.len();
-        self.func.emit(prog);
-        prog.add_instr(stac::Instr::Call);
+        let returns_count = prog.user_functions.get(&self.func).unwrap().returns.len();
+        block.add_instr(stac::Instr::Call {
+            label: prog.user_functions.get(&self.func).unwrap().label,
+        });
 
         // Discard the returns
         for _ in 0..returns_count {
-            prog.add_instr(stac::Instr::Discard);
+            block.add_instr(stac::Instr::Discard);
         }
     }
 }
 
 pub struct FuncImpl {
-    pub id: Ident,
+    pub name: String,
     pub body: Box<dyn Stmt>,
 
     pub params: Vec<Ident>,
-    pub returns: Vec<DataType>,
 }
 
 impl Stmt for FuncImpl {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
-        // Assign this function to the variable where it is stored
-        prog.add_instr(stac::Instr::LoadConst {
-            v: stac::DataVal::Function(prog.next_label().next().next().next()),
-            // load, store, goto
-            // next, next, next
-        });
-        prog.add_instr(stac::Instr::StoreIdent { i: self.id.addr });
-
-        // Goto after the function definition
-        let goto = prog.add_temp_instr();
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, _block: &mut stac::Block) {
+        let mut body_block = stac::Block::new();
 
         // Load the parameters into their assigned variables
         for param in self.params.iter().rev() {
-            prog.add_instr(stac::Instr::StoreIdent { i: param.addr });
+            body_block.add_instr(stac::Instr::StoreIdent { i: param.addr });
         }
 
         // Emit the body
-        self.body.emit(prog);
+        self.body.emit(prog, &mut body_block);
+        let body_label = prog.add_block(body_block);
 
-        // just in case the function doesn't have a final return
-        prog.add_instr(stac::Instr::Return {});
-
-        prog.mod_instr(
-            goto,
-            stac::Instr::Goto {
-                label: prog.next_label(),
-            },
-        )
+        // Add the label of the function to the program
+        prog.user_functions
+            .entry(self.name)
+            .and_modify(|f| f.label = body_label);
     }
 }
 
 pub struct ExternFuncImpl {
-    pub id: Ident,
+    pub name: String,
     pub params_count: usize,
 }
 
 impl Stmt for ExternFuncImpl {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
-        // Assign this function to the variable where it is stored
-        prog.add_instr(stac::Instr::LoadConst {
-            v: stac::DataVal::Function(prog.next_label().next().next().next()),
-            // load, store, goto
-            // next, next, next
-        });
-        prog.add_instr(stac::Instr::StoreIdent { i: self.id.addr });
-
-        // Goto after the function definition
-        let goto = prog.add_temp_instr();
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, _block: &mut stac::Block) {
+        let mut body_block = stac::Block::new();
 
         // Add the name of this function to the eval stack
-        prog.add_instr(stac::Instr::LoadConst {
-            v: DataVal::String(self.id.name.into_word().unwrap()),
+        body_block.add_instr(stac::Instr::LoadConst {
+            v: DataVal::String(self.name.clone()),
         });
 
         // Make the extern call
-        prog.add_instr(stac::Instr::ExternCall {
+        body_block.add_instr(stac::Instr::ExternCall {
             params_count: self.params_count,
         });
+        let body_label = prog.add_block(body_block);
 
-        // Return
-        prog.add_instr(stac::Instr::Return {});
-
-        prog.mod_instr(
-            goto,
-            stac::Instr::Goto {
-                label: prog.next_label(),
-            },
-        )
+        // Add the label of the function to the program
+        prog.user_functions
+            .entry(self.name)
+            .and_modify(|f| f.label = body_label);
     }
 }
 
@@ -149,7 +124,7 @@ pub struct Return {
 }
 
 impl Stmt for Return {
-    fn emit(mut self: Box<Self>, prog: &mut stac::Prog) {
+    fn emit(mut self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block) {
         // Evaluate each item, leaving it on the stack
         for idx in 0..self.values.len() {
             // In order to emit it, we need to own the value, which means
@@ -162,9 +137,9 @@ impl Stmt for Return {
                 }),
             );
 
-            v.emit(prog);
+            v.emit(prog, block);
         }
 
-        prog.add_instr(stac::Instr::Return);
+        block.add_instr(stac::Instr::Return);
     }
 }

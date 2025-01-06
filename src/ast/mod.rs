@@ -9,7 +9,7 @@ pub mod func;
 pub trait Expr {
     // Resolve the expression, potentially adding instructions to the program,
     // returning the address where the value is stored
-    fn emit(self: Box<Self>, prog: &mut stac::Prog);
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block);
     // fn in_type(&self, prog: &tac::Prog) -> Vec<DataType>;
     fn out_type(&self, prog: &stac::Prog) -> DataType;
 }
@@ -22,8 +22,8 @@ pub struct Ident {
 }
 
 impl Expr for Ident {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
-        prog.add_instr(stac::Instr::LoadIdent { i: self.addr });
+    fn emit(self: Box<Self>, _prog: &mut stac::Prog, block: &mut stac::Block) {
+        block.add_instr(stac::Instr::LoadIdent { i: self.addr });
     }
 
     fn out_type(&self, _prog: &stac::Prog) -> DataType {
@@ -38,18 +38,18 @@ pub struct Arith {
 }
 
 impl Expr for Arith {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block) {
         let x_type = self.x.out_type(prog);
 
-        self.y.emit(prog);
-        self.x.emit(prog);
+        self.y.emit(prog, block);
+        self.x.emit(prog, block);
 
         match x_type {
             DataType::String => {
-                prog.add_instr(stac::Instr::Concat);
+                block.add_instr(stac::Instr::Concat);
             }
             _ => {
-                prog.add_instr(stac::Instr::BinaryExpr { op: self.op });
+                block.add_instr(stac::Instr::BinaryExpr { op: self.op });
             }
         }
     }
@@ -71,9 +71,9 @@ pub struct Unary {
 }
 
 impl Expr for Unary {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
-        self.x.emit(prog);
-        prog.add_instr(stac::Instr::UnaryExpr { op: self.op });
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block) {
+        self.x.emit(prog, block);
+        block.add_instr(stac::Instr::UnaryExpr { op: self.op });
     }
 
     fn out_type(&self, prog: &stac::Prog) -> DataType {
@@ -87,8 +87,8 @@ pub struct Const {
 }
 
 impl Expr for Const {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
-        prog.add_instr(stac::Instr::LoadConst { v: self.value });
+    fn emit(self: Box<Self>, _prog: &mut stac::Prog, block: &mut stac::Block) {
+        block.add_instr(stac::Instr::LoadConst { v: self.value });
     }
 
     fn out_type(&self, _prog: &stac::Prog) -> DataType {
@@ -102,51 +102,37 @@ pub struct BoolOr {
 }
 
 impl Expr for BoolOr {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
-        self.x.emit(prog);
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block) {
+        self.x.emit(prog, block);
 
         // Lazy evaluate the second operand
-        let if1 = prog.add_temp_instr();
+        let mut true_block = stac::Block::new();
+        let mut initially_false_block = stac::Block::new();
+        let mut finally_false_block = stac::Block::new();
 
-        self.y.emit(prog);
-
-        let if2 = prog.add_temp_instr();
-
-        // Create true and false branches
-        prog.add_instr(stac::Instr::LoadConst {
-            v: DataVal::Bool(false),
-        });
-
-        let goto = prog.add_temp_instr();
-
-        let t_branch = prog.add_instr(stac::Instr::LoadConst {
+        true_block.add_instr(stac::Instr::LoadConst {
             v: DataVal::Bool(true),
         });
 
-        prog.add_instr(stac::Instr::IfEnd { start: if2 });
-        prog.add_instr(stac::Instr::IfEnd { start: if1 });
+        finally_false_block.add_instr(stac::Instr::LoadConst {
+            v: DataVal::Bool(false),
+        });
 
-        // Change the labels of the if/goto statements
-        prog.mod_instr(
-            if1,
-            stac::Instr::IfExpr {
-                if_true: t_branch,
-                if_false: stac::Label::CONTINUE,
-            },
-        );
-        prog.mod_instr(
-            if2,
-            stac::Instr::IfExpr {
-                if_true: t_branch,
-                if_false: stac::Label::CONTINUE,
-            },
-        );
-        prog.mod_instr(
-            goto,
-            stac::Instr::Goto {
-                label: t_branch.next(),
-            },
-        );
+        let true_label = prog.add_block(true_block);
+        let finally_false_label = prog.add_block(finally_false_block);
+
+        self.y.emit(prog, &mut initially_false_block);
+
+        initially_false_block.add_instr(stac::Instr::IfExpr {
+            if_true: true_label,
+            if_false: finally_false_label,
+        });
+
+        let initially_false_label = prog.add_block(initially_false_block);
+        block.add_instr(stac::Instr::IfExpr {
+            if_true: true_label,
+            if_false: initially_false_label,
+        })
     }
 
     fn out_type(&self, _prog: &stac::Prog) -> DataType {
@@ -160,51 +146,37 @@ pub struct BoolAnd {
 }
 
 impl Expr for BoolAnd {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
-        self.x.emit(prog);
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block) {
+        self.x.emit(prog, block);
 
         // Lazy evaluate the second operand
-        let if1 = prog.add_temp_instr();
+        let mut false_block = stac::Block::new();
+        let mut initially_true_block = stac::Block::new();
+        let mut finally_true_block = stac::Block::new();
 
-        self.y.emit(prog);
-
-        let if2 = prog.add_temp_instr();
-
-        // Create true and false branches
-        prog.add_instr(stac::Instr::LoadConst {
-            v: DataVal::Bool(true),
-        });
-
-        let goto = prog.add_temp_instr();
-
-        let f_branch = prog.add_instr(stac::Instr::LoadConst {
+        false_block.add_instr(stac::Instr::LoadConst {
             v: DataVal::Bool(false),
         });
 
-        prog.add_instr(stac::Instr::IfEnd { start: if2 });
-        prog.add_instr(stac::Instr::IfEnd { start: if1 });
+        finally_true_block.add_instr(stac::Instr::LoadConst {
+            v: DataVal::Bool(true),
+        });
 
-        // Change the labels of if/goto statements
-        prog.mod_instr(
-            if1,
-            stac::Instr::IfExpr {
-                if_true: stac::Label::CONTINUE,
-                if_false: f_branch,
-            },
-        );
-        prog.mod_instr(
-            if2,
-            stac::Instr::IfExpr {
-                if_true: stac::Label::CONTINUE,
-                if_false: f_branch,
-            },
-        );
-        prog.mod_instr(
-            goto,
-            stac::Instr::Goto {
-                label: f_branch.next(),
-            },
-        );
+        let false_label = prog.add_block(false_block);
+        let finally_true_label = prog.add_block(finally_true_block);
+
+        self.y.emit(prog, &mut initially_true_block);
+
+        initially_true_block.add_instr(stac::Instr::IfExpr {
+            if_true: finally_true_label,
+            if_false: false_label,
+        });
+
+        let initially_true_label = prog.add_block(initially_true_block);
+        block.add_instr(stac::Instr::IfExpr {
+            if_true: initially_true_label,
+            if_false: false_label,
+        })
     }
 
     fn out_type(&self, _prog: &stac::Prog) -> DataType {
@@ -217,9 +189,9 @@ pub struct BoolNot {
 }
 
 impl Expr for BoolNot {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
-        self.x.emit(prog);
-        prog.add_instr(stac::Instr::UnaryExpr {
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block) {
+        self.x.emit(prog, block);
+        block.add_instr(stac::Instr::UnaryExpr {
             op: lexer::Token::C('!'),
         });
     }
@@ -230,7 +202,7 @@ impl Expr for BoolNot {
 }
 
 pub trait Stmt {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog);
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block);
 }
 
 pub struct If {
@@ -239,23 +211,20 @@ pub struct If {
 }
 
 impl Stmt for If {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block) {
         // Resolve the expr
-        self.expr.emit(prog);
-        let if1 = prog.add_temp_instr();
+        self.expr.emit(prog, block);
 
         // Execute the statement if true
-        self.stmt.emit(prog);
-        let end = prog.add_instr(stac::Instr::IfEnd { start: if1 });
+        let mut true_block = stac::Block::new();
+        self.stmt.emit(prog, &mut true_block);
+        let true_label = prog.add_block(true_block);
 
         // Point if to correct labels
-        prog.mod_instr(
-            if1,
-            stac::Instr::IfExpr {
-                if_true: stac::Label::CONTINUE,
-                if_false: end,
-            },
-        )
+        block.add_instr(stac::Instr::IfExpr {
+            if_true: true_label,
+            if_false: stac::Label::CONTINUE,
+        })
     }
 }
 
@@ -266,29 +235,25 @@ pub struct IfElse {
 }
 
 impl Stmt for IfElse {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block) {
         // Resolve the expr
-        self.expr.emit(prog);
-        let if1 = prog.add_temp_instr();
+        self.expr.emit(prog, block);
 
-        // Execute the statement if true
-        self.stmt_t.emit(prog);
+        // Create the true block
+        let mut true_block = stac::Block::new();
+        self.stmt_t.emit(prog, &mut true_block);
+        let true_label = prog.add_block(true_block);
 
-        let goto = prog.add_temp_instr();
+        // Create the false block
+        let mut false_block = stac::Block::new();
+        self.stmt_f.emit(prog, &mut false_block);
+        let false_label = prog.add_block(false_block);
 
-        self.stmt_f.emit(prog);
-
-        let end = prog.add_instr(stac::Instr::IfEnd { start: if1 });
-
-        // Point if/goto to correct labels
-        prog.mod_instr(
-            if1,
-            stac::Instr::IfExpr {
-                if_true: stac::Label::CONTINUE,
-                if_false: goto.next(),
-            },
-        );
-        prog.mod_instr(goto, stac::Instr::Goto { label: end })
+        // Point if to correct labels
+        block.add_instr(stac::Instr::IfExpr {
+            if_true: true_label,
+            if_false: false_label,
+        })
     }
 }
 
@@ -298,24 +263,24 @@ pub struct While {
 }
 
 impl Stmt for While {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block) {
         // Resolve the expr, then run the stmt & re-eval if true
-        let expr_label = prog.next_label();
-        self.expr.emit(prog);
-        let if1 = prog.add_temp_instr();
-        self.stmt.emit(prog);
-        prog.add_instr(stac::Instr::Goto { label: expr_label });
+        let stmt_label = prog.add_temp_block();
 
-        let end = prog.add_instr(stac::Instr::IfEnd { start: if1 });
+        let mut expr_block = stac::Block::new();
+        self.expr.emit(prog, &mut expr_block);
+        expr_block.add_instr(stac::Instr::IfExpr {
+            if_true: stmt_label,
+            if_false: stac::Label::CONTINUE, // will automatically unwind the entire call stack
+        });
+        let expr_label = prog.add_block(expr_block);
 
-        // Modify labels of instrs
-        prog.mod_instr(
-            if1,
-            stac::Instr::IfExpr {
-                if_true: stac::Label::CONTINUE,
-                if_false: end,
-            },
-        );
+        let mut stmt_block = stac::Block::new();
+        self.stmt.emit(prog, &mut stmt_block);
+        stmt_block.add_instr(stac::Instr::Goto { label: expr_label });
+        prog.mod_block(stmt_block, stmt_label);
+
+        block.add_instr(stac::Instr::Goto { label: expr_label });
     }
 }
 
@@ -325,12 +290,12 @@ pub struct Assign {
 }
 
 impl Stmt for Assign {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block) {
         // Resolve the expression
-        self.expr.emit(prog);
+        self.expr.emit(prog, block);
 
         // Set the id to the result of the expr
-        prog.add_instr(stac::Instr::StoreIdent { i: self.id.addr });
+        block.add_instr(stac::Instr::StoreIdent { i: self.id.addr });
     }
 }
 
@@ -340,14 +305,14 @@ pub struct Seq {
 }
 
 impl Stmt for Seq {
-    fn emit(self: Box<Self>, prog: &mut stac::Prog) {
-        self.stmt1.emit(prog);
-        self.stmt2.emit(prog);
+    fn emit(self: Box<Self>, prog: &mut stac::Prog, block: &mut stac::Block) {
+        self.stmt1.emit(prog, block);
+        self.stmt2.emit(prog, block);
     }
 }
 
 pub struct NullStmt {}
 
 impl Stmt for NullStmt {
-    fn emit(self: Box<Self>, _prog: &mut stac::Prog) {}
+    fn emit(self: Box<Self>, _prog: &mut stac::Prog, _block: &mut stac::Block) {}
 }

@@ -44,7 +44,9 @@ impl Parser {
 
     pub fn program(&mut self) -> &mut stac::Prog {
         let s = self.stmts();
-        s.emit(&mut self.prog);
+        let mut block = stac::Block::new();
+        s.emit(&mut self.prog, &mut block);
+        self.prog.entrypoint = self.prog.add_block(block);
 
         return &mut self.prog;
     }
@@ -134,18 +136,17 @@ impl Parser {
                         let returns = self.type_list();
 
                         // Assign the func to the name
-                        let name_ident = ast::Ident {
-                            name: name.clone(),
-                            data_type: DataType::Function {
+                        self.prog.user_functions.insert(
+                            name.clone().into_word().unwrap(),
+                            stac::Function {
+                                label: stac::Label::CONTINUE,
                                 params: params.clone(),
-                                returns: returns.clone(),
+                                returns,
                             },
-                            addr: self.prog.allocate_var(),
-                        };
-                        self.cur_scope.put(name, name_ident.clone());
+                        );
 
                         return Box::new(ast::func::ExternFuncImpl {
-                            id: name_ident,
+                            name: name.into_word().unwrap(),
                             params_count: params.len(),
                         });
                     }
@@ -184,31 +185,29 @@ impl Parser {
                         let body = self.block();
 
                         // Create the data type for the function
-                        let params_types: Vec<DataType> =
+                        let param_types: Vec<DataType> =
                             params.iter().map(|p| p.data_type.clone()).collect();
-
-                        // Assign the func to the name
-                        let name_ident = ast::Ident {
-                            name: name.clone(),
-                            data_type: DataType::Function {
-                                params: params_types.clone(),
-                                returns: returns.clone(),
-                            },
-                            addr: self.prog.allocate_var(),
-                        };
 
                         // pop the func scope
                         self.cur_scope =
                             std::mem::replace(&mut self.cur_scope, scope::Scope::new(None))
                                 .take_prev();
-                        self.cur_scope.put(name, name_ident.clone());
+
+                        // Assign the func to the name
+                        self.prog.user_functions.insert(
+                            name.clone().into_word().unwrap(),
+                            stac::Function {
+                                label: stac::Label::CONTINUE,
+                                params: param_types,
+                                returns,
+                            },
+                        );
 
                         // Return the function
                         return Box::new(ast::func::FuncImpl {
-                            id: name_ident,
+                            name: name.into_word().unwrap(),
                             body,
                             params,
-                            returns,
                         });
                     }
                 }
@@ -367,13 +366,8 @@ impl Parser {
                 let params = self.bool_list(Token::C(')'));
                 self.next_tok();
 
-                let id = self
-                    .cur_scope
-                    .get(id_tok.clone())
-                    .expect(&format!("unknown identifier: {}", id_tok));
-
                 stmt = Box::new(ast::func::FuncCall {
-                    func: Box::new(id),
+                    func: id_tok.into_word().unwrap(),
                     params,
                 });
             }
@@ -595,7 +589,7 @@ impl Parser {
                     self.next_tok();
 
                     return Box::new(ast::func::FuncCall {
-                        func: Box::new(id.unwrap()),
+                        func: id_tok.into_word().unwrap(),
                         params,
                     });
                 } else if self.lookahead == Token::C('{') {

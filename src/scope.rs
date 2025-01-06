@@ -16,6 +16,7 @@ impl<'a> Scope {
     }
 
     pub fn put(&mut self, w: lexer::Token, i: ast::Ident) {
+        println!("assigning {:?} to slot {:?}", w, i.addr);
         match w {
             lexer::Token::Word(s) => self.sym_table.insert(s, i),
             _ => panic!("cannot save non-word in symbol table: {:?}", w),

@@ -1,5 +1,3 @@
-use stac::Instr;
-
 pub mod ast;
 pub mod lexer;
 pub mod parser;
@@ -181,10 +179,10 @@ mod tests {
         println!("{:?}", prog.variables);
 
         assert_eq!(prog.variables[0], stac::DataVal::Integer(4));
-        assert_eq!(prog.variables[2], stac::DataVal::Integer(4));
-        assert_eq!(prog.variables[3], stac::DataVal::Integer(5));
-        assert_eq!(prog.variables[5], stac::DataVal::Integer(7));
-        assert_eq!(prog.variables[11], stac::DataVal::Integer(-1));
+        assert_eq!(prog.variables[1], stac::DataVal::Integer(4));
+        assert_eq!(prog.variables[2], stac::DataVal::Integer(5));
+        assert_eq!(prog.variables[4], stac::DataVal::Integer(7));
+        assert_eq!(prog.variables[7], stac::DataVal::Integer(-1));
     }
 
     #[test]
@@ -299,11 +297,11 @@ mod tests {
         prog.execute();
         println!("{:?}", prog.variables);
 
-        assert_eq!(prog.variables[2], stac::DataVal::Integer(6));
-        assert_eq!(prog.variables[3], stac::DataVal::Waiting);
-        assert_eq!(prog.variables[4], stac::DataVal::Waiting);
-        assert_eq!(prog.variables[7], stac::DataVal::Integer(2));
-        assert_eq!(prog.variables[8], stac::DataVal::Waiting);
+        assert_eq!(prog.variables[0], stac::DataVal::Integer(6));
+        assert_eq!(prog.variables[1], stac::DataVal::Waiting);
+        assert_eq!(prog.variables[2], stac::DataVal::Waiting);
+        assert_eq!(prog.variables[4], stac::DataVal::Integer(2));
+        assert_eq!(prog.variables[5], stac::DataVal::Waiting);
     }
 
     #[test]
@@ -347,13 +345,17 @@ mod tests {
         prog.execute();
         println!("{:?}", prog.variables);
 
+        assert_eq!(prog.variables[0], stac::DataVal::Waiting);
         assert_eq!(prog.variables[1], stac::DataVal::Waiting);
         assert_eq!(prog.variables[2], stac::DataVal::Waiting);
     }
 }
 
-pub fn print_instructions(instrs: &Vec<Instr>) {
-    for (k, instr) in instrs.iter().enumerate() {
-        println!("{:3}:  {:?}", k, instr)
+pub fn print_instructions(blocks: &Vec<stac::Block>) {
+    for (k, block) in blocks.iter().enumerate() {
+        println!("\nBLOCK {:3}:", k);
+        for (k, instr) in block.code.iter().enumerate() {
+            println!("{:3}:  {:?}", k, instr)
+        }
     }
 }
