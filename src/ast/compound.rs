@@ -129,6 +129,7 @@ impl Expr for StructLiteral {
         block.add_instr(stac::Instr::CompoundCreate);
 
         // Evaluate each value and assign it to the field
+        let mut remaining_fields = strct.names.clone();
         for (field, ref mut value) in self.values {
             let idx = *strct.names.get(&field).unwrap();
             block.add_instr(stac::Instr::LoadConst {
@@ -144,6 +145,19 @@ impl Expr for StructLiteral {
             );
             val.emit(prog, block);
 
+            block.add_instr(stac::Instr::CompoundSet);
+            remaining_fields.remove(&field);
+        }
+
+        // Store the default value in the struct for any remaining fields
+        for (_, idx) in remaining_fields {
+            block.add_instr(stac::Instr::LoadConst {
+                v: DataVal::Integer(idx as i64),
+            });
+
+            // Get the default value for the type
+            let val = DataVal::default_for(strct.types[idx].clone(), &prog.user_structs);
+            block.add_instr(stac::Instr::LoadConst { v: val });
             block.add_instr(stac::Instr::CompoundSet);
         }
     }

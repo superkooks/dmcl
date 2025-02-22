@@ -51,6 +51,29 @@ pub enum DataVal {
     Waiting,
 }
 
+impl DataVal {
+    pub fn default_for(ty: DataType, user_structs: &HashMap<String, Struct>) -> Self {
+        match ty {
+            DataType::Integer => DataVal::Integer(0),
+            DataType::Float => DataVal::Float(0.0),
+            DataType::Bool => DataVal::Bool(false),
+            DataType::String => DataVal::String("".into()),
+            DataType::Array(_) => DataVal::Compound(vec![]),
+            DataType::Struct(struct_name) => {
+                let strct = user_structs.get(&struct_name).unwrap();
+                let mut compound = vec![DataVal::Bool(false); strct.names.len()];
+                for (_, idx) in &strct.names {
+                    // Get the default value for the type
+                    compound[*idx] = DataVal::default_for(strct.types[*idx].clone(), user_structs);
+                }
+
+                DataVal::Compound(compound)
+            }
+            DataType::Waiting => panic!("no default value for waiting"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Instr {
     BinaryExpr {

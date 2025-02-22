@@ -215,6 +215,7 @@ mod tests {
     struct Test {
         n1: int,
         n2: float
+        n3: float
     }
 
     p := Test{
@@ -222,7 +223,8 @@ mod tests {
         n2: 6.0f
     };
     q := p.n1;
-    r := p.n2;"
+    r := p.n2;
+    w := p.n3;"
                 .chars()
                 .collect(),
         );
@@ -236,6 +238,7 @@ mod tests {
 
         assert_eq!(prog.variables[1], stac::DataVal::Integer(5));
         assert_eq!(prog.variables[2], stac::DataVal::Float(6.));
+        assert_eq!(prog.variables[3], stac::DataVal::Float(0.));
     }
 
     #[test]
@@ -399,7 +402,7 @@ mod tests {
     func extern createDroplet(req: CreateDropletRequest) (Droplet)
 
     q := createDroplet(CreateDropletRequest {
-        name: "hello_world",
+        name: "hello-world",
         region: "syd1",
         size: "s-1vcpu-512mb-10gb",
         image: "ubuntu-20-04-x64"
