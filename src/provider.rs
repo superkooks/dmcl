@@ -231,8 +231,17 @@ impl<'de> Visitor<'de> for TypeAndValVisitor<'_> {
 
                 let mut arr = vec![DataVal::Bool(false); stru.types.len()];
                 while let Some(key) = map.next_key::<String>()? {
+                    // If any key in this map is waiting (there should only be one)
+                    // then this entire object is a single DataVal::Waiting.
                     if key == "$waiting" {
+                        map.next_value::<serde::de::IgnoredAny>()?;
                         return Ok(DataVal::Waiting);
+                    }
+
+                    // Discard unknown keys
+                    if stru.names.get(&key).is_none() {
+                        map.next_value::<serde::de::IgnoredAny>()?;
+                        continue;
                     }
 
                     let val = map.next_value_seed(TypeAndVal {

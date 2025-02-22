@@ -283,7 +283,10 @@ impl Prog {
                         .json(&DMCLRPC { id, params: to_ser })
                         .send()
                         .unwrap();
-                    let mut deserializer = serde_json::Deserializer::from_reader(resp);
+
+                    let s = resp.text().unwrap();
+                    let mut deserializer = serde_json::Deserializer::from_str(&s);
+                    println!("received from provider: {}", s);
 
                     let ext_ret = ExternReturns {
                         user_structs,

@@ -422,7 +422,7 @@ mod tests {
         prog.execute();
         println!("{:?}", prog.variables);
 
-        panic!();
+        assert_eq!(prog.variables[1], stac::DataVal::Waiting)
     }
 }
 
