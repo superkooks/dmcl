@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod lexer;
 pub mod parser;
+pub mod provider;
 pub mod scope;
 pub mod stac;
 
@@ -276,23 +277,27 @@ mod tests {
         let prog = par.program();
         print_instructions(&prog.code);
 
-        prog.external_functions
-            .insert("createResource".into(), |params| {
+        prog.external_functions.insert(
+            "createResource".into(),
+            Box::new(|_ip, _ptype, _rtypes, params, _ustructs| {
                 println!(
                     "creating resource {}",
                     params[0].clone().into_string().unwrap()
                 );
                 return vec![DataVal::Integer(6)];
-            });
+            }),
+        );
 
-        prog.external_functions
-            .insert("createResourceAsync".into(), |params| {
+        prog.external_functions.insert(
+            "createResourceAsync".into(),
+            Box::new(|_ip, _ptype, _rtypes, params, _ustructs| {
                 println!(
                     "creating resource asynchronously {}",
                     params[0].clone().into_string().unwrap()
                 );
                 return vec![DataVal::Waiting];
-            });
+            }),
+        );
 
         prog.execute();
         println!("{:?}", prog.variables);
@@ -333,14 +338,16 @@ mod tests {
         let prog = par.program();
         print_instructions(&prog.code);
 
-        prog.external_functions
-            .insert("createResourceAsync".into(), |params| {
+        prog.external_functions.insert(
+            "createResourceAsync".into(),
+            Box::new(|_ip, _ptype, _rtypes, params, _ustructs| {
                 println!(
                     "creating resource asynchronously {}",
                     params[0].clone().into_string().unwrap()
                 );
                 return vec![DataVal::Waiting];
-            });
+            }),
+        );
 
         prog.execute();
         println!("{:?}", prog.variables);
@@ -348,6 +355,71 @@ mod tests {
         assert_eq!(prog.variables[0], stac::DataVal::Waiting);
         assert_eq!(prog.variables[1], stac::DataVal::Waiting);
         assert_eq!(prog.variables[2], stac::DataVal::Waiting);
+    }
+
+    #[test]
+    fn fake_provider() {
+        let l = lexer::Lexer::new(
+            r#"
+    struct CreateDropletRequest {
+        name: string,
+        region: string,
+        size: string,
+        image: string,
+        ssh_keys: []string,
+        backups: bool,
+        ipv6: bool,
+        monitoring: bool,
+        tags: []string,
+        user_data: string,
+        volumes: []string,
+        vpc_uuid: string,
+        with_droplet_agent: bool
+    }
+
+    struct DropletNetwork {
+        ip_address: string,
+        netmask: string,
+        gateway: string,
+        type: string
+    }
+
+    struct DropletNetworking {
+        v4: []DropletNetwork,
+        v6: []DropletNetwork
+    }
+
+    struct Droplet {
+        id: int,
+        state: string,
+        name: string,
+        networks: DropletNetworking
+    }
+
+    func extern createDroplet(req: CreateDropletRequest) (Droplet)
+
+    q := createDroplet(CreateDropletRequest {
+        name: "hello_world",
+        region: "syd1",
+        size: "s-1vcpu-512mb-10gb",
+        image: "ubuntu-20-04-x64"
+    });
+    c := q.state;
+    "#
+            .chars()
+            .collect(),
+        );
+
+        let mut par = parser::Parser::new(l);
+        let prog = par.program();
+        print_instructions(&prog.code);
+
+        prog.add_http_provider("http://localhost:8080".into());
+
+        prog.execute();
+        println!("{:?}", prog.variables);
+
+        panic!();
     }
 }
 

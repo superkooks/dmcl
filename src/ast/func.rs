@@ -94,7 +94,8 @@ impl Stmt for FuncImpl {
 
 pub struct ExternFuncImpl {
     pub name: String,
-    pub params_count: usize,
+    pub param_types: Vec<DataType>,
+    pub return_types: Vec<DataType>,
 }
 
 impl Stmt for ExternFuncImpl {
@@ -108,7 +109,8 @@ impl Stmt for ExternFuncImpl {
 
         // Make the extern call
         body_block.add_instr(stac::Instr::ExternCall {
-            params_count: self.params_count,
+            param_types: self.param_types,
+            return_types: self.return_types,
         });
         let body_label = prog.add_block(body_block);
 

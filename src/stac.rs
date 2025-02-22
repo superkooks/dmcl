@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
 use enum_as_inner::EnumAsInner;
+use serde::de::DeserializeSeed;
 
 use crate::lexer::{self, Token};
+use crate::provider::{ExternReturns, ProviderSchema, TypeAndVal, DMCLRPC};
 use crate::stac;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -84,7 +86,7 @@ pub enum Instr {
     CompoundCreate, // length
 
     Goto {
-        label: Label, // so far no need for a dynamic goto
+        label: Label,
     },
     Call {
         // Adds the return label to the call stack, then does a goto to the function
@@ -93,7 +95,8 @@ pub enum Instr {
     Return, // Pop the previous label on the callstack and goto it
 
     ExternCall {
-        params_count: usize,
+        param_types: Vec<DataType>,
+        return_types: Vec<DataType>,
     },
 }
 
@@ -170,7 +173,19 @@ pub struct Prog {
 
     evaluating_side_effects: bool,
     blocks_to_eval: Vec<Label>,
-    pub external_functions: HashMap<String, fn(Vec<DataVal>) -> Vec<DataVal>>,
+    pub external_functions: HashMap<
+        String,
+        Box<
+            dyn Fn(
+                (usize, usize, usize),
+                Vec<DataType>,
+                Vec<DataType>,
+                Vec<DataVal>,
+                &HashMap<String, Struct>,
+            ) -> Vec<DataVal>,
+        >,
+    >,
+    extern_func_call_count: HashMap<String, usize>,
 }
 
 impl Prog {
@@ -188,6 +203,7 @@ impl Prog {
             evaluating_side_effects: false,
             blocks_to_eval: vec![],
             external_functions: HashMap::new(),
+            extern_func_call_count: HashMap::new(),
         }
     }
 
@@ -209,6 +225,51 @@ impl Prog {
 
     pub fn mod_block(&mut self, block: Block, label: Label) {
         self.code[label.0] = block;
+    }
+
+    pub fn add_http_provider(&mut self, addr: String) {
+        let schema: ProviderSchema = reqwest::blocking::get(addr.clone() + "/provider_schema")
+            .unwrap()
+            .json()
+            .unwrap();
+
+        for func in schema.functions {
+            println!("adding {} from {}", &addr, &func);
+            self.add_http_extern(addr.clone(), func);
+        }
+    }
+
+    pub fn add_http_extern(&mut self, addr: String, name: String) {
+        self.external_functions.insert(
+            name.clone(),
+            Box::new(
+                move |id, param_types, return_types, param_vals, user_structs| {
+                    let to_ser: Vec<_> = param_types
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, dtype)| TypeAndVal {
+                            typ: dtype.clone(),
+                            val: param_vals[idx].clone(),
+                            user_structs,
+                        })
+                        .collect();
+
+                    let client = reqwest::blocking::Client::new();
+                    let resp = client
+                        .post(format!("{}/{}", &addr, &name))
+                        .json(&DMCLRPC { id, params: to_ser })
+                        .send()
+                        .unwrap();
+                    let mut deserializer = serde_json::Deserializer::from_reader(resp);
+
+                    let ext_ret = ExternReturns {
+                        user_structs,
+                        types: return_types,
+                    };
+                    DeserializeSeed::deserialize(ext_ret, &mut deserializer).unwrap()
+                },
+            ),
+        );
     }
 
     pub fn execute(&mut self) {
@@ -407,21 +468,34 @@ impl Prog {
                     Instr::Discard => {
                         self.eval_stack.pop();
                     }
-                    Instr::ExternCall { params_count } => {
+                    Instr::ExternCall {
+                        param_types,
+                        return_types,
+                    } => {
                         let func_name = self.eval_stack.pop().unwrap().into_string().unwrap();
 
-                        let params = self
+                        let param_vals = self
                             .eval_stack
-                            .split_off(self.eval_stack.len() - params_count);
+                            .split_off(self.eval_stack.len() - param_types.len());
+
+                        let call_site = *self.call_stack.last().unwrap();
+                        let call_count = *self.extern_func_call_count.get(&func_name).unwrap_or(&0);
 
                         let mut returns = self
                             .external_functions
                             .get(&func_name)
                             .expect("unknown external function")(
-                            params
+                            (call_site.0, call_site.1, call_count),
+                            param_types,
+                            return_types,
+                            param_vals,
+                            &self.user_structs,
                         );
 
                         self.eval_stack.append(&mut returns);
+
+                        self.extern_func_call_count
+                            .insert(func_name, call_count + 1);
                     }
                 }
             };

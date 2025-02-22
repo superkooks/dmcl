@@ -208,7 +208,7 @@ impl Lexer {
 
         if self.peek.is_alphabetic() {
             let mut s = String::new();
-            while self.peek.is_alphanumeric() {
+            while self.peek.is_alphanumeric() || self.peek == '_' {
                 s.push(self.peek);
                 self.read_char();
             }

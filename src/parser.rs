@@ -141,13 +141,14 @@ impl Parser {
                             stac::Function {
                                 label: stac::Label::CONTINUE,
                                 params: params.clone(),
-                                returns,
+                                returns: returns.clone(),
                             },
                         );
 
                         return Box::new(ast::func::ExternFuncImpl {
                             name: name.into_word().unwrap(),
-                            params_count: params.len(),
+                            param_types: params,
+                            return_types: returns,
                         });
                     }
                     _ => {
@@ -282,10 +283,7 @@ impl Parser {
             self.next_tok();
             self.match_tok(Token::C(':'));
 
-            let data_type = match self.lookahead.clone() {
-                Token::Type(s) => s,
-                _ => panic!("syntax error: decl must have a type"),
-            };
+            let data_type = self.data_type();
             self.next_tok();
 
             list.push((name, data_type));
@@ -304,17 +302,25 @@ impl Parser {
                 self.next_tok();
             }
 
-            let data_type = match self.lookahead.clone() {
-                Token::Type(s) => s,
-                _ => panic!("syntax error: must have a type"),
-            };
-            list.push(data_type);
-
+            list.push(self.data_type());
             self.next_tok();
         }
         self.next_tok();
 
         return list;
+    }
+
+    fn data_type(&mut self) -> DataType {
+        match self.lookahead.clone() {
+            Token::Type(s) => s,
+            Token::Word(s) => DataType::Struct(s),
+            Token::C('[') => {
+                self.next_tok();
+                self.match_tok(Token::C(']'));
+                DataType::Array(Box::new(self.data_type()))
+            }
+            _ => panic!("syntax error: must have a type"),
+        }
     }
 
     fn assign(&mut self) -> Box<dyn ast::Stmt> {
